@@ -1,4 +1,6 @@
-﻿namespace TagzApp.Common;
+﻿using TagzApp.Common.Models;
+
+namespace TagzApp.Common;
 
 /// <summary>
 /// Defines the interface for a Social Media Provider that delivers content to TagzApp
@@ -28,7 +30,5 @@ public interface ISocialMediaProvider
 	/// <param name="since">Datestamp to search for content since</param>
 	/// <returns></returns>
 	Task<IEnumerable<Content>> GetContentForHashtag(Hashtag tag, DateTimeOffset since);
-
-
 
 }
