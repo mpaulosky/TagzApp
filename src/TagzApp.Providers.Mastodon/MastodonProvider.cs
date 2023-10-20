@@ -1,8 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
-using System.Text.Json;
 using System.Web;
-using TagzApp.Common.Models;
+using TagzApp.Providers.Mastodon.Configuration;
 
 namespace TagzApp.Providers.Mastodon;
 
@@ -12,14 +11,21 @@ internal class MastodonProvider : ISocialMediaProvider, IHasNewestId
 	private readonly HttpClient _HttpClient;
 	private readonly ILogger _Logger;
 
-	public MastodonProvider(IHttpClientFactory httpClientFactory, ILogger<MastodonProvider> logger)
+	public MastodonProvider(IHttpClientFactory httpClientFactory, ILogger<MastodonProvider> logger,
+		MastodonConfiguration configuration)
 	{
 		_HttpClient = httpClientFactory.CreateClient(nameof(MastodonProvider));
 		_Logger = logger;
+
+		if (!string.IsNullOrWhiteSpace(configuration.Description))
+		{
+			Description = configuration.Description;
+		}
 	}
 
 	public string Id => "MASTODON";
 	public string DisplayName => "Mastodon";
+	public string Description { get; init; } = "Mastodon is a decentralized social network made up of independent servers organized around specific themes, topics, or interests.";
 
 	public TimeSpan NewContentRetrievalFrequency => TimeSpan.FromSeconds(20);
 
@@ -52,10 +58,11 @@ internal class MastodonProvider : ISocialMediaProvider, IHasNewestId
 			return Enumerable.Empty<Content>();
 		}
 
-		NewestId = messages.OrderByDescending(m => m.id).First().id;
+		NewestId = messages!.OrderByDescending(m => m.id).First().id;
 
-		var baseServerAddress = _HttpClient.BaseAddress.Host.ToString();
+		var baseServerAddress = _HttpClient.BaseAddress?.Host.ToString();
 
+#pragma warning disable CS8604 // Possible null reference argument.
 		return messages!.Select(m => new Content
 		{
 			Provider = Id,
@@ -66,16 +73,25 @@ internal class MastodonProvider : ISocialMediaProvider, IHasNewestId
 			Author = new Creator
 			{
 				DisplayName = m.account!.display_name,
-				UserName = m.account.acct + (m.account.acct.Contains("@") ? "" : $"@{baseServerAddress}" ),
+				UserName = m.account.acct + (m.account.acct.Contains("@") ? "" : $"@{baseServerAddress}"),
 				ProviderId = Id,
 				ProfileImageUri = new Uri(m.account.avatar_static),
 				ProfileUri = new Uri(m.account.url)
 			},
 			Text = m.content,
 			HashtagSought = tag.Text,
-			PreviewCard = m.card is null ? m.media_attachments.Any() ? (Common.Models.Card)Message.GetMediaAttachment(m.media_attachments.First().ToString()) : null : (Common.Models.Card)m.card
+			// TODO: Check for CS8604 -- Possible null reference argument in m.media_attachments! Possibly it is connected with the missing Null annotations in Messages.cs! This whole assignment makes the compiler "mad" in several parts with multiple different Warnings. At a first glance I wasn't clear how to fix these warnings!
+			PreviewCard = m.card is null ? m.media_attachments.Any()
+				? (Common.Models.Card)Message.GetMediaAttachment(m.media_attachments.First().ToString())
+				: null : (Common.Models.Card)m.card!
 		}).ToArray();
+#pragma warning restore CS8604 // Possible null reference argument.
 
+	}
+
+	public Task StartAsync()
+	{
+		return Task.CompletedTask;
 	}
 
 	private Uri FormatUri(Hashtag tag)

@@ -2,38 +2,34 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 #nullable disable
 
-using System;
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Extensions.Logging;
+using TagzApp.Web.Data;
 
 namespace TagzApp.Web.Areas.Identity.Pages.Account
 {
 	[AllowAnonymous]
 	public class ExternalLoginModel : PageModel
 	{
-		private readonly SignInManager<IdentityUser> _signInManager;
-		private readonly UserManager<IdentityUser> _userManager;
-		private readonly IUserStore<IdentityUser> _userStore;
-		private readonly IUserEmailStore<IdentityUser> _emailStore;
+		private readonly SignInManager<TagzAppUser> _signInManager;
+		private readonly UserManager<TagzAppUser> _userManager;
+		private readonly IUserStore<TagzAppUser> _userStore;
+		private readonly IUserEmailStore<TagzAppUser> _emailStore;
 		private readonly IEmailSender _emailSender;
 		private readonly ILogger<ExternalLoginModel> _logger;
 
 		public ExternalLoginModel(
-				SignInManager<IdentityUser> signInManager,
-				UserManager<IdentityUser> userManager,
-				IUserStore<IdentityUser> userStore,
+				SignInManager<TagzAppUser> signInManager,
+				UserManager<TagzAppUser> userManager,
+				IUserStore<TagzAppUser> userStore,
 				ILogger<ExternalLoginModel> logger,
 				IEmailSender emailSender)
 		{
@@ -84,6 +80,12 @@ namespace TagzApp.Web.Areas.Identity.Pages.Account
 			[Required]
 			[EmailAddress]
 			public string Email { get; set; }
+
+			[Required]
+			[MaxLength(50)]
+			[Display(Name = "Display Name")]
+			public string DisplayName { get; set; }
+
 		}
 
 		public IActionResult OnGet() => RedirectToPage("./Login");
@@ -112,7 +114,8 @@ namespace TagzApp.Web.Areas.Identity.Pages.Account
 			}
 
 			// Sign in the user with this external login provider if the user already has a login.
-			var result = await _signInManager.ExternalLoginSignInAsync(info.LoginProvider, info.ProviderKey, isPersistent: false, bypassTwoFactor: true);
+			await _signInManager.UpdateExternalAuthenticationTokensAsync(info);
+			var result = await _signInManager.ExternalLoginSignInAsync(info.LoginProvider, info.ProviderKey, isPersistent: true, bypassTwoFactor: true);
 			if (result.Succeeded)
 			{
 				_logger.LogInformation("{Name} logged in with {LoginProvider} provider.", info.Principal.Identity.Name, info.LoginProvider);
@@ -131,7 +134,8 @@ namespace TagzApp.Web.Areas.Identity.Pages.Account
 				{
 					Input = new InputModel
 					{
-						Email = info.Principal.FindFirstValue(ClaimTypes.Email)
+						Email = info.Principal.FindFirstValue(ClaimTypes.Email),
+						DisplayName = info.Principal.FindFirstValue(ClaimTypes.Name)
 					};
 				}
 				return Page();
@@ -152,6 +156,7 @@ namespace TagzApp.Web.Areas.Identity.Pages.Account
 			if (ModelState.IsValid)
 			{
 				var user = CreateUser();
+				user.DisplayName = Input.DisplayName;
 
 				await _userStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
 				await _emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
@@ -165,6 +170,8 @@ namespace TagzApp.Web.Areas.Identity.Pages.Account
 						_logger.LogInformation("User created an account using {Name} provider.", info.LoginProvider);
 
 						await AssignAdminForFirstUser();
+
+						await _signInManager.UpdateExternalAuthenticationTokensAsync(info);
 
 						var userId = await _userManager.GetUserIdAsync(user);
 						var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
@@ -185,7 +192,7 @@ namespace TagzApp.Web.Areas.Identity.Pages.Account
 						}
 
 
-						await _signInManager.SignInAsync(user, isPersistent: false, info.LoginProvider);
+						await _signInManager.SignInAsync(user, false, info.LoginProvider);
 						return LocalRedirect(returnUrl);
 					}
 				}
@@ -213,27 +220,27 @@ namespace TagzApp.Web.Areas.Identity.Pages.Account
 
 		}
 
-		private IdentityUser CreateUser()
+		private TagzAppUser CreateUser()
 		{
 			try
 			{
-				return Activator.CreateInstance<IdentityUser>();
+				return Activator.CreateInstance<TagzAppUser>();
 			}
 			catch
 			{
-				throw new InvalidOperationException($"Can't create an instance of '{nameof(IdentityUser)}'. " +
-						$"Ensure that '{nameof(IdentityUser)}' is not an abstract class and has a parameterless constructor, or alternatively " +
+				throw new InvalidOperationException($"Can't create an instance of '{nameof(TagzAppUser)}'. " +
+						$"Ensure that '{nameof(TagzAppUser)}' is not an abstract class and has a parameterless constructor, or alternatively " +
 						$"override the external login page in /Areas/Identity/Pages/Account/ExternalLogin.cshtml");
 			}
 		}
 
-		private IUserEmailStore<IdentityUser> GetEmailStore()
+		private IUserEmailStore<TagzAppUser> GetEmailStore()
 		{
 			if (!_userManager.SupportsUserEmail)
 			{
 				throw new NotSupportedException("The default UI requires a user store with email support.");
 			}
-			return (IUserEmailStore<IdentityUser>)_userStore;
+			return (IUserEmailStore<TagzAppUser>)_userStore;
 		}
 	}
 }

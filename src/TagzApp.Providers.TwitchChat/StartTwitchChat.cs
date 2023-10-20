@@ -1,41 +1,52 @@
-﻿using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using TagzApp.Common.Exceptions;
+﻿using Microsoft.Extensions.DependencyInjection;
+using TagzApp.Communication;
 
 namespace TagzApp.Providers.TwitchChat;
 
-public class StartTwitchChat : IConfigureProvider
+public class StartTwitchChat : BaseConfigurationProvider, IConfigureProvider
 {
-
 	private const string ConfigurationKey = "providers:twitchchat";
+	private const string _DisplayName = "TwitchChat";
+	private TwitchChatConfiguration? _TwitchChatConfiguration;
 
-	public IServiceCollection RegisterServices(IServiceCollection services, IConfiguration configuration)
+	public StartTwitchChat(IProviderConfigurationRepository providerConfigurationRepository)
+		: base(providerConfigurationRepository)
 	{
+	}
 
-		IConfiguration config = null;
-		try
+	public async Task<IServiceCollection> RegisterServices(IServiceCollection services, CancellationToken cancellationToken = default)
+	{
+		await LoadConfigurationValuesAsync(_DisplayName, cancellationToken);
+
+		services.AddSingleton(_TwitchChatConfiguration ?? new TwitchChatConfiguration
 		{
-			config = configuration.GetSection(ConfigurationKey);
-			services.Configure<TwitchChatConfiguration>(config);
-		}
-		catch (Exception ex)
-		{
-
-			// Was not able to configure the provider
-			throw new InvalidConfigurationException(ex.Message, ConfigurationKey);
-
-		}
-
-		if (config is null || string.IsNullOrEmpty(config.GetValue<string>("ClientId")))
-		{
-			// No configuration provided, no registration to be added
-			return services;
-		}
-
+			ChannelName = string.Empty,
+			ChatBotName = string.Empty,
+			OAuthToken = string.Empty
+		});
 		services.AddSingleton<ISocialMediaProvider, TwitchChatProvider>();
 
-
 		return services;
+	}
+
+	protected override void MapConfigurationValues(ProviderConfiguration providerConfiguration)
+	{
+		var config = providerConfiguration.ConfigurationSettings;
+
+		if (config is null)
+		{
+			_TwitchChatConfiguration = TwitchChatConfiguration.Empty;
+			return;
+		}
+
+		_TwitchChatConfiguration = new TwitchChatConfiguration
+		{
+			ClientId = config.GetValueOrDefault("ClientId", string.Empty),
+			ClientSecret = config.GetValueOrDefault("ClientSecret", string.Empty),
+			ChatBotName = config.GetValueOrDefault("ChatBotName", string.Empty),
+			OAuthToken = config.GetValueOrDefault("OAuthToken", string.Empty),
+			ChannelName = config.GetValueOrDefault("ChannelName", string.Empty)
+		};
 
 	}
 }

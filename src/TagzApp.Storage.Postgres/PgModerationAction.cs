@@ -2,7 +2,7 @@
 
 namespace TagzApp.Storage.Postgres;
 
-internal class PgModerationAction
+public class PgModerationAction
 {
 
 	public long Id { get; set; }
@@ -10,7 +10,7 @@ internal class PgModerationAction
 	[MaxLength(20)]
 	public required string Provider { get; set; }
 
-	[MaxLength(50)]
+	[MaxLength(200)]
 	public required string ProviderId { get; set; }
 
 	public required ModerationState State { get; set; } = ModerationState.Pending;

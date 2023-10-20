@@ -1,7 +1,5 @@
 ﻿using Google.Apis.Services;
 using Google.Apis.YouTube.v3;
-using Microsoft.Extensions.Options;
-using TagzApp.Common.Models;
 using TagzApp.Providers.Youtube.Configuration;
 
 namespace TagzApp.Providers.Youtube;
@@ -12,12 +10,13 @@ internal class YoutubeProvider : ISocialMediaProvider
 
 	public string Id => "YOUTUBE";
 	public string DisplayName => "Youtube";
+	public string Description { get; init; }
 
 	public TimeSpan NewContentRetrievalFrequency => TimeSpan.FromSeconds(30);
 
-	public YoutubeProvider(IOptions<YoutubeConfiguration> options)
+	public YoutubeProvider(YoutubeConfiguration options)
 	{
-		_Configuration = options.Value;
+		_Configuration = options;
 	}
 
 	public async Task<IEnumerable<Content>> GetContentForHashtag(Hashtag tag, DateTimeOffset since)
@@ -25,7 +24,7 @@ internal class YoutubeProvider : ISocialMediaProvider
 		var youtubeService = new YouTubeService(new BaseClientService.Initializer()
 		{
 			ApiKey = _Configuration.ApiKey,
-			ApplicationName = "MyTagg"
+			ApplicationName = "TagzApp"
 		});
 
 		var searchListRequest = youtubeService.Search.List("snippet");
@@ -58,5 +57,10 @@ internal class YoutubeProvider : ISocialMediaProvider
 			},
 			Text = m.Snippet.Title
 		});
+	}
+
+	public Task StartAsync()
+	{
+		return Task.CompletedTask;
 	}
 }

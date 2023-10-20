@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using TagzApp.Common.Models;
 using TagzApp.Providers.Blazot.Constants;
 using TagzApp.Providers.Blazot.Formatters;
 using TagzApp.Providers.Blazot.Interfaces;
@@ -42,13 +41,7 @@ public class ContentConverter : IContentConverter
 		try
 		{
 			var body = transmission.Body;
-			if (!string.IsNullOrWhiteSpace(body))
-			{
-				body = LinkFormatters.AddWebLinks(body);
-				body = LinkFormatters.AddHashTagLinks(body);
-				body = LinkFormatters.AddMentionLinks(body);
-			}
-
+			body = LinkFormatters.FormatBodyLinks(body);
 			body = body.Replace("\n", "<br/>");
 
 			var content = new Content
@@ -67,7 +60,7 @@ public class ContentConverter : IContentConverter
 					.Combine(BlazotConstants.BaseAppAddress, "transmission", transmission.TransmissionId.ToString())
 					.Replace(@"\", "/")),
 				Text = body,
-				Timestamp = new DateTimeOffset(transmission.DateTransmitted, TimeSpan.Zero).ToLocalTime(),
+				Timestamp = new DateTimeOffset(transmission.DateTransmitted, TimeSpan.Zero),
 				HashtagSought = tag?.Text ?? string.Empty,
 				Type = ContentType.Message
 			};

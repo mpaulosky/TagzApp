@@ -2,7 +2,6 @@
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Web;
-using TagzApp.Common.Models;
 
 namespace TagzApp.Providers.TwitchChat;
 
@@ -14,6 +13,7 @@ public class TwitchChatProvider : ISocialMediaProvider, IDisposable
 	public string Id => "TWITCH";
 	public string DisplayName => "TwitchChat";
 	public TimeSpan NewContentRetrievalFrequency => TimeSpan.FromSeconds(1);
+	public string Description { get; init; } = "Twitch is where millions of people come together live every day to chat, interact, and make their own entertainment together.";
 
 	private static readonly ConcurrentQueue<Content> _Contents = new();
 	private static readonly CancellationTokenSource _CancellationTokenSource = new();
@@ -21,34 +21,31 @@ public class TwitchChatProvider : ISocialMediaProvider, IDisposable
 	private readonly ILogger<TwitchChatProvider> _Logger;
 	private readonly TwitchProfileRepository _ProfileRepository;
 
-	public TwitchChatProvider(IOptions<TwitchChatConfiguration> settings, ILogger<TwitchChatProvider> logger, IHttpClientFactory clientFactory)
+	public TwitchChatProvider(TwitchChatConfiguration settings, ILogger<TwitchChatProvider> logger, IHttpClientFactory clientFactory)
 	{
-
-		_Settings = settings.Value;
+		_Settings = settings;
 		_Logger = logger;
 		_ProfileRepository = new TwitchProfileRepository(_Settings.ClientId, _Settings.ClientSecret, clientFactory.CreateClient("TwitchProfile"));
-		ListenForMessages();
+
+		if (!string.IsNullOrWhiteSpace(settings.Description))
+		{
+			Description = settings.Description;
+		}
 	}
 
-	internal TwitchChatProvider(IOptions<TwitchChatConfiguration> settings, ILogger<TwitchChatProvider> logger, IChatClient chatClient )
+	internal TwitchChatProvider(IOptions<TwitchChatConfiguration> settings, ILogger<TwitchChatProvider> logger, IChatClient chatClient)
 	{
-
 		_Settings = settings.Value;
 		_Logger = logger;
 		ListenForMessages(chatClient);
 	}
 
-	/// <summary>
-	/// The Twitch channel to monitor
-	/// </summary>
-	public string Channel { get; set; } = "csharpfritz";
-
 	private async Task ListenForMessages(IChatClient chatClient = null)
 	{
-		
+
 		var token = _CancellationTokenSource.Token;
-		_Client = chatClient ?? new ChatClient(Channel, _Settings.ChatBotName, _Settings.OAuthToken, _Logger);
-		
+		_Client = chatClient ?? new ChatClient(_Settings.ChannelName, _Settings.ChatBotName, _Settings.OAuthToken, _Logger);
+
 		_Client.NewMessage += async (sender, args) =>
 		{
 
@@ -56,21 +53,23 @@ public class TwitchChatProvider : ISocialMediaProvider, IDisposable
 
 			_Contents.Enqueue(new Content
 			{
-				Provider = this.Id,
+				Provider = Id,
 				ProviderId = args.MessageId,
-				SourceUri = new Uri($"https://twitch.tv/{Channel}"),
-				Author = new Creator {
+				SourceUri = new Uri($"https://twitch.tv/{_Settings.ChannelName}"),
+				Author = new Creator
+				{
 					ProfileUri = new Uri($"https://twitch.tv/{args.UserName}"),
-					ProfileImageUri = new Uri(profileUrl),		
+					ProfileImageUri = new Uri(profileUrl),
 					DisplayName = args.DisplayName,
 					UserName = $"@{args.DisplayName}"
 				},
 				Text = HttpUtility.HtmlEncode(args.Message),
 				Type = ContentType.Chat,
-				Timestamp = args.Timestamp
+				Timestamp = args.Timestamp,
+				Emotes = args.Emotes
 			});
 		};
-		
+
 		_Client.Init();
 
 	}
@@ -82,12 +81,12 @@ public class TwitchChatProvider : ISocialMediaProvider, IDisposable
 
 	public Task<IEnumerable<Content>> GetContentForHashtag(Hashtag tag, DateTimeOffset since)
 	{
-		
+
 		var messages = _Contents.ToList();
 		if (messages.Count() == 0) return Task.FromResult(Enumerable.Empty<Content>());
 
 		var messageCount = messages.Count();
-		for (var i=0; i<messageCount; i++)
+		for (var i = 0; i < messageCount; i++)
 		{
 			_Contents.TryDequeue(out _);
 		}
@@ -125,5 +124,11 @@ public class TwitchChatProvider : ISocialMediaProvider, IDisposable
 		// Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
 		Dispose(disposing: true);
 		GC.SuppressFinalize(this);
+	}
+
+	public Task StartAsync()
+	{
+		ListenForMessages();
+		return Task.CompletedTask;
 	}
 }

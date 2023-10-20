@@ -1,14 +1,13 @@
-﻿using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
+
 using System.IO.Compression;
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
 using System.Web;
-using TagzApp.Common.Models;
+
 using TagzApp.Providers.Twitter.Configuration;
 using TagzApp.Providers.Twitter.Models;
-using TagzApp.Web.Services;
 
 namespace TagzApp.Providers.Twitter;
 
@@ -29,14 +28,24 @@ public class TwitterProvider : ISocialMediaProvider, IHasNewestId
 
 	public string NewestId { get; set; } = string.Empty;
 
-	public TwitterProvider(IHttpClientFactory httpClientFactory, IOptions<TwitterConfiguration> options, ILogger<TwitterProvider> logger)
+	public string Description { get; init; } = "Twitter is a service for friends, family, and coworkers to communicate and stay connected through the exchange of quick, frequent messages";
+
+	public TwitterProvider(IHttpClientFactory httpClientFactory, ILogger<TwitterProvider> logger,
+		TwitterConfiguration configuration)
 	{
 		_HttpClient = httpClientFactory.CreateClient(nameof(TwitterProvider));
-		_Configuration = options.Value;
+		_Configuration = configuration;
 		_Logger = logger;
-	}
 
+		if (!string.IsNullOrWhiteSpace(configuration.Description))
+		{
+			Description = configuration.Description;
+		}
+	}
+	// TODO: Check CS1998: Async method lacks 'await' operators and will run synchronously
+#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
 	public async Task<IEnumerable<Content>> GetContentForHashtag(Common.Models.Hashtag tag, DateTimeOffset since)
+#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
 	{
 
 		var tweetQuery = "#" + tag.Text.ToLowerInvariant().TrimStart('#') + " -is:retweet";
@@ -44,7 +53,7 @@ public class TwitterProvider : ISocialMediaProvider, IHasNewestId
 
 		var targetUri = FormatUri(tweetQuery, sinceTerm);
 
-		TwitterData recentTweets = new TwitterData();
+		TwitterData recentTweets = new();
 		try
 		{
 
@@ -96,7 +105,7 @@ public class TwitterProvider : ISocialMediaProvider, IHasNewestId
 
 		var outContent = new List<Content>();
 
-		foreach (var t in recentTweets.data)
+		foreach (var t in recentTweets.data!)
 		{
 
 			var author = recentTweets.includes.users.FirstOrDefault(u => u.id == t.author_id);
@@ -118,7 +127,7 @@ public class TwitterProvider : ISocialMediaProvider, IHasNewestId
 
 				var c = new Content
 				{
-					Provider = this.Id,
+					Provider = Id,
 					ProviderId = t.id,
 					Author = new Creator
 					{
@@ -202,4 +211,8 @@ public class TwitterProvider : ISocialMediaProvider, IHasNewestId
 		return new Uri($"/2/tweets/search/recent?{query}", UriKind.Relative);
 	}
 
+	public Task StartAsync()
+	{
+		return Task.CompletedTask;
+	}
 }

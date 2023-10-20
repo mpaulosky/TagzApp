@@ -8,84 +8,95 @@ namespace TagzApp.Communication;
 
 public class BaseProviderManager
 {
-  private readonly IServiceCollection _Services;
-  private readonly IConfiguration _Configuration;
-  private readonly ILogger<BaseProviderManager> _Logger;
-  public IEnumerable<ISocialMediaProvider> Providers { get; private set; }
+	private readonly IServiceCollection _Services;
+	private readonly IConfiguration _Configuration;
+	private readonly ILogger<BaseProviderManager> _Logger;
+	protected readonly IProviderConfigurationRepository? _ProviderConfigurationRepository;
 
-  public BaseProviderManager(IConfiguration configuration, ILogger<BaseProviderManager> logger, 
-    IEnumerable<ISocialMediaProvider>? socialMediaProviders)
-  {
-    _Services = new ServiceCollection();
-    _Configuration = configuration;
-    _Logger = logger;
-    Providers = socialMediaProviders != null && socialMediaProviders.Count() > 0 
-      ? socialMediaProviders : new List<ISocialMediaProvider>();
-  }
+	public IEnumerable<ISocialMediaProvider> Providers { get; private set; }
 
-  public void InitProviders()
-  {
-    if (!Providers.Any())
-    {
-      LoadConfigurationProviders();
-    }
-  }
+	public BaseProviderManager(IConfiguration configuration, ILogger<BaseProviderManager> logger,
+		IEnumerable<ISocialMediaProvider>? socialMediaProviders,
+		IProviderConfigurationRepository? providerConfigurationRepository)
+	{
+		_Services = new ServiceCollection();
+		_Configuration = configuration;
+		_Logger = logger;
+		_ProviderConfigurationRepository = providerConfigurationRepository;
+		Providers = socialMediaProviders != null && socialMediaProviders.Count() > 0
+			? socialMediaProviders : new List<ISocialMediaProvider>();
+	}
 
-  private void LoadConfigurationProviders()
-  {
-    List<IConfigureProvider> configProviders = new List<IConfigureProvider>();
-    var path = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
+	public async Task InitProviders()
+	{
+		if (!Providers.Any())
+		{
+			await LoadConfigurationProviders();
+		}
+	}
 
-    if (!string.IsNullOrWhiteSpace(path))
-    {
-      foreach (string dllPath in Directory.GetFiles(path, "*.dll", SearchOption.AllDirectories))
-      {
+	private async Task LoadConfigurationProviders()
+	{
+		List<IConfigureProvider> configProviders = new();
+		var path = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
 
-				if (dllPath.Contains("Microsoft.") || dllPath.Contains("System.")) continue;
+		if (!string.IsNullOrWhiteSpace(path))
+		{
+			foreach (string dllPath in Directory.GetFiles(path, "*.dll", SearchOption.AllDirectories))
+			{
 
-        try
-        {
-          var assembly = Assembly.LoadFrom(dllPath);
-          var providerAssemblies = assembly.GetTypes()
-            .Where(t => typeof(IConfigureProvider).IsAssignableFrom(t) && !t.IsInterface);
+				if (dllPath.Contains("Microsoft.") || dllPath.Contains("System.") || dllPath.Contains("AspNet.") || dllPath.Contains("Azure.")) continue;
 
-          if (providerAssemblies.Any())
-          {
-            foreach (var provider in providerAssemblies)
-            {
-              var providerInstance = Activator.CreateInstance(provider) as IConfigureProvider;
+				try
+				{
+					var assembly = Assembly.LoadFrom(dllPath);
+					var providerAssemblies = assembly.GetTypes()
+						.Where(t => typeof(IConfigureProvider).IsAssignableFrom(t) && !t.IsInterface);
 
-              if (providerInstance != null)
-              {
-                configProviders.Add(providerInstance);
-              }
-            }
-          }
-				} catch (BadImageFormatException) {
+					if (providerAssemblies.Any())
+					{
+						foreach (var provider in providerAssemblies)
+						{
+							var providerInstance = Activator.CreateInstance(provider, _ProviderConfigurationRepository) as IConfigureProvider;
+
+							if (providerInstance != null)
+							{
+								configProviders.Add(providerInstance);
+							}
+						}
+					}
+				}
+				catch (BadImageFormatException)
+				{
 					_Logger.LogWarning($"Skipping {dllPath} - not a .NET dll");
 				}
-				catch (Exception ex) {
-          _Logger.LogWarning(ex, $"Skipping {dllPath} due to error");
-        }
-      }
+				catch (Exception ex)
+				{
+					_Logger.LogWarning(ex, $"Skipping {dllPath} due to error");
+				}
+			}
 
-      ConfigureProviders(configProviders);
-    }
-  }
+			await ConfigureProviders(configProviders);
+		}
+	}
 
-  private void ConfigureProviders(IEnumerable<IConfigureProvider> configurationProviders)
-  {
-    var socialMediaProviders = new List<ISocialMediaProvider>();
+	private async Task ConfigureProviders(IEnumerable<IConfigureProvider> configurationProviders)
+	{
+		var socialMediaProviders = new List<ISocialMediaProvider>();
 
-    foreach (var provider in configurationProviders)
-    {
-      provider.RegisterServices(_Services, _Configuration);
-    }
+		foreach (var provider in configurationProviders)
+		{
+			if (provider is INeedConfiguration)
+			{
+				((INeedConfiguration)provider).SetConfiguration(_Configuration);
+			}
+			await provider.RegisterServices(_Services);
+		}
 
-    _Services.AddPolicies(_Configuration);
-
-    var sp = _Services.BuildServiceProvider();
-    socialMediaProviders.AddRange(sp.GetServices<ISocialMediaProvider>());
-    Providers = socialMediaProviders;
-  }
-} 
+		_Services.AddPolicies(_Configuration);
+		_Services.AddSingleton<IConfiguration>(_Configuration);
+		var sp = _Services.BuildServiceProvider();
+		socialMediaProviders.AddRange(sp.GetServices<ISocialMediaProvider>());
+		Providers = socialMediaProviders;
+	}
+}

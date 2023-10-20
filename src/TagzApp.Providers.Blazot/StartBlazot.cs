@@ -1,7 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using TagzApp.Common.Exceptions;
+using TagzApp.Communication;
 using TagzApp.Communication.Extensions;
 using TagzApp.Providers.Blazot.Configuration;
 using TagzApp.Providers.Blazot.Constants;
@@ -12,44 +10,51 @@ using TagzApp.Providers.Blazot.Services;
 
 namespace TagzApp.Providers.Blazot;
 
-public class StartBlazot : IConfigureProvider
+public class StartBlazot : BaseConfigurationProvider, IConfigureProvider
 {
-  private readonly ILogger<StartBlazot> _Logger;
+	private string _DisplayName => BlazotConstants.DisplayName;
+	private BlazotClientConfiguration? _BlazotClientConfiguration;
+	private BlazotSettings? _BlazotSettings;
 
-  public StartBlazot() { }
-  public StartBlazot(ILogger<StartBlazot> logger)
-  {
-    _Logger = logger ?? throw new ArgumentNullException(nameof(logger));
-  }
+	public StartBlazot(IProviderConfigurationRepository providerConfigurationRepository)
+		: base(providerConfigurationRepository)
+	{
+	}
 
-  public IServiceCollection RegisterServices(IServiceCollection services, IConfiguration configuration)
-  {
-    IConfigurationSection config;
+	public async Task<IServiceCollection> RegisterServices(IServiceCollection services, CancellationToken cancellationToken = default)
+	{
+		await LoadConfigurationValuesAsync(_DisplayName, cancellationToken);
 
-    try
-    {
-      config = configuration.GetSection(BlazotClientConfiguration.AppSettingsSection);
-      services.Configure<BlazotClientConfiguration>(config);
-    }
-    catch (Exception ex)
-    {
-      _Logger.LogError(ex, "Error configuring Blazot: {message}", ex.Message);
-      throw new InvalidConfigurationException(ex.Message, BlazotClientConfiguration.AppSettingsSection);
-    }
+		services.AddSingleton(_BlazotSettings ?? new BlazotSettings());
+		services.AddHttpClient<ISocialMediaProvider, BlazotProvider, BlazotClientConfiguration>(_BlazotClientConfiguration ?? new BlazotClientConfiguration());
+		services.AddTransient<ISocialMediaProvider, BlazotProvider>();
+		services.AddSingleton<IContentConverter, ContentConverter>();
+		services.AddSingleton<ITransmissionsService, HashtagTransmissionsService>();
+		services.AddSingleton<IAuthService, AuthService>();
+		services.AddSingleton<IAuthEvents, AuthEvents>();
+		return services;
+	}
 
-    var settings = config.Get<BlazotClientConfiguration>();
+	protected override void MapConfigurationValues(ProviderConfiguration providerConfiguration)
+	{
+		var config = providerConfiguration.ConfigurationSettings;
 
-    if (string.IsNullOrWhiteSpace(settings?.BaseAddress?.ToString()) || string.IsNullOrWhiteSpace(settings.ApiKey))
-      return services;
+		if (config != null)
+		{
+			_BlazotClientConfiguration = new BlazotClientConfiguration
+			{
+				BaseAddress = new Uri(config["BaseAddress"] ?? string.Empty),
+				Timeout = TimeSpan.Parse(config["Timeout"] ?? string.Empty),
+				ApiKey = config["ApiKey"] ?? string.Empty
+			};
 
-    services.AddSingleton(configuration);
-    services.AddHttpClient<ISocialMediaProvider, BlazotProvider, BlazotClientConfiguration>(configuration, BlazotClientConfiguration.AppSettingsSection);
-    services.AddTransient<ISocialMediaProvider, BlazotProvider>();
-    services.AddSingleton<IContentConverter, ContentConverter>();
-    services.AddSingleton<ITransmissionsService, HashtagTransmissionsService>();
-    services.AddSingleton<IAuthService, AuthService>();
-    services.AddSingleton<IAuthEvents, AuthEvents>();
-
-    return services;
-  }
+			_BlazotSettings = new BlazotSettings
+			{
+				ApiKey = config["ApiKey"] ?? string.Empty,
+				SecretAuthKey = config["SecretAuthKey"] ?? string.Empty,
+				WindowSeconds = int.Parse(config["WindowSeconds"]),
+				WindowRequests = int.Parse(config["WindowRequests"])
+			};
+		}
+	}
 }

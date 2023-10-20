@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using Npgsql.Replication.PgOutput;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Infrastructure;
 using TagzApp.Communication.Extensions;
 using TagzApp.Web.Data;
 using TagzApp.Web.Hubs;
+using TagzApp.Web.Services;
 
 namespace TagzApp.Web;
 
@@ -13,36 +13,35 @@ public class Program
 {
 	private static void Main(string[] args)
 	{
+
 		var builder = WebApplication.CreateBuilder(args);
 
+		try
+		{
+			builder.Configuration.AddApplicationConfiguration();
+			builder.Services.Configure<ApplicationConfiguration>(
+				builder.Configuration.GetSection("ApplicationConfiguration")
+			);
+			builder.Services.AddSingleton<IConfigurationRoot>(builder.Configuration);
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine("This should fail when applying EF migrations");
+		}
+
 		// Late bind the connection string so that any changes to the configuration made later on, or in the test fixture can be picked up.
-		if (!string.IsNullOrEmpty(builder.Configuration.GetConnectionString("TagzAppSecurity")))
+		builder.Services.AddSecurityContext(builder.Configuration);
+
+		builder.Services.AddDefaultIdentity<TagzAppUser>(options =>
+						options.SignIn.RequireConfirmedAccount = true
+				)
+				.AddRoles<IdentityRole>()
+				.AddEntityFrameworkStores<SecurityContext>();
+
+		_ = builder.Services.AddAuthentication(options =>
 		{
-
-			builder.Services.AddDbContext<SecurityContext>((services, options) =>
-				options.UseNpgsql(
-					services.GetRequiredService<IConfiguration>().GetConnectionString("TagzAppSecurity") ??
-					throw new InvalidOperationException("Connection string 'SecurityContextConnection' not found."), 
-					pg => pg.MigrationsAssembly("TagzApp.Storage.Postgres.Security"))
-				);
-
-		}
-		else
-		{
-
-			builder.Services.AddDbContext<SecurityContext>((services, options) =>
-				options.UseSqlite(
-					services.GetRequiredService<IConfiguration>().GetConnectionString("SecurityContextConnection") ??
-					throw new InvalidOperationException("Connection string 'SecurityContextConnection' not found.")));
-
-		}
-		builder.Services.AddDefaultIdentity<IdentityUser>(options =>
-				options.SignIn.RequireConfirmedAccount = true
-			)
-			.AddRoles<IdentityRole>()
-			.AddEntityFrameworkStores<SecurityContext>();
-
-		_ = builder.Services.AddAuthentication()
+			//options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+		})
 			.AddCookie()
 			.AddExternalProviders(builder.Configuration);
 
@@ -50,7 +49,7 @@ public class Program
 		{
 			config.AddPolicy(Security.Policy.AdminRoleOnly, policy => { policy.RequireRole(Security.Role.Admin); });
 			config.AddPolicy(Security.Policy.Moderator,
-				policy => { policy.RequireRole(Security.Role.Moderator, Security.Role.Admin); });
+							policy => { policy.RequireRole(Security.Role.Moderator, Security.Role.Admin); });
 		});
 
 		// Add services to the container.
@@ -79,8 +78,13 @@ public class Program
 			options.LoggingFields = Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.RequestPropertiesAndHeaders;
 		});
 
+		// configure TempData serialization with System.Text.Json
+		builder.Services.AddSingleton<TempDataSerializer, JsonTempDataSerializer>();
+
 		// Add the Polly policies
 		builder.Services.AddPolicies(builder.Configuration);
+
+		builder.Services.AddSingleton<ViewModelUtilitiesService>();
 
 		var app = builder.Build();
 
@@ -92,7 +96,9 @@ public class Program
 			app.UseExceptionHandler("/Error");
 			// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
 			app.UseHsts();
-		} else {
+		}
+		else
+		{
 			app.UseDeveloperExceptionPage();
 		}
 

@@ -1,9 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Internal;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using TagzApp.Common.Models;
 using TagzApp.Communication;
 using TagzApp.Web.Services;
 
@@ -14,16 +12,21 @@ public class PostgresMessagingService : BaseProviderManager, IMessagingService
 
 	private readonly IServiceProvider _Services;
 	private readonly INotifyNewMessages _NotifyNewMessages;
-
+	// TODO: Check if _services actually can be null. The compiler is complaining about it.
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 	public PostgresMessagingService(
+#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 		IServiceProvider services,
 		INotifyNewMessages notifyNewMessages,
 		IConfiguration configuration,
 		ILogger<BaseProviderManager> logger,
-		IEnumerable<ISocialMediaProvider>? socialMediaProviders) : base(configuration, logger, socialMediaProviders)
+		ILogger<AzureSafetyModeration> azureSafetyLogger,
+		IEnumerable<ISocialMediaProvider>? socialMediaProviders,
+		IProviderConfigurationRepository providerConfigurationRepository) :
+		base(configuration, logger, socialMediaProviders, providerConfigurationRepository)
 	{
 		_Services = services;
-		_NotifyNewMessages = notifyNewMessages;
+		_NotifyNewMessages = new AzureSafetyModeration(notifyNewMessages, services, configuration, azureSafetyLogger);
 	}
 
 	private List<string> _TagsTracked = new();
@@ -86,9 +89,9 @@ public class PostgresMessagingService : BaseProviderManager, IMessagingService
 		var ctx = scope.ServiceProvider.GetRequiredService<TagzAppContext>();
 		_TagsTracked.AddRange((await ctx.TagsWatched.ToArrayAsync()).Select(t => t.Text));
 
-		InitProviders();
-		_Service = new PostgresMessaging(_Services);
-		_Service.StartProviders(Providers, cancellationToken);
+		await InitProviders();
+		_Service = new PostgresMessaging(_Services, _ProviderConfigurationRepository!);
+		await _Service.StartProviders(Providers, cancellationToken);
 
 		foreach (var tag in _TagsTracked)
 		{
@@ -118,8 +121,8 @@ public class PostgresMessagingService : BaseProviderManager, IMessagingService
 		var ctx = scope.ServiceProvider.GetRequiredService<TagzAppContext>();
 		var outRecords = await ctx.Content.AsNoTracking()
 			.Include(c => c.ModerationAction)
-			.Where(c => c.HashtagSought == tag && 
-					c.ModerationAction != null && 
+			.Where(c => c.HashtagSought == tag &&
+					c.ModerationAction != null &&
 					c.ModerationAction.State == ModerationState.Approved)
 			.OrderByDescending(c => c.Timestamp)
 			.Take(50)
@@ -144,7 +147,7 @@ public class PostgresMessagingService : BaseProviderManager, IMessagingService
 			.Take(100)
 			.ToListAsync();
 
-		var outResults = new List<(Content, ModerationAction?)> ();
+		var outResults = new List<(Content, ModerationAction?)>();
 		foreach (var c in contentResults)
 		{
 
@@ -163,7 +166,7 @@ public class PostgresMessagingService : BaseProviderManager, IMessagingService
 
 		using var scope = _Services.CreateScope();
 		var ctx = scope.ServiceProvider.GetRequiredService<TagzAppContext>();
-		
+
 		return ctx.Content.AsNoTracking()
 			.Where(c => c.HashtagSought == tag && c.Provider == provider)
 			.OrderByDescending(c => c.Timestamp)

@@ -1,6 +1,5 @@
 ﻿using Bogus;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using TagzApp.Common.Models;
 
 namespace TagzApp.WebTest;
 
@@ -9,6 +8,8 @@ public class StubSocialMediaProvider : ISocialMediaProvider
 	public string Id { get; } = "TEST";
 	public string DisplayName { get; } = "TEST";
 	public TimeSpan NewContentRetrievalFrequency => TimeSpan.FromMilliseconds(1000);
+
+	public string Description => "TEST";
 
 	public Task<IEnumerable<Content>> GetContentForHashtag(Hashtag tag, DateTimeOffset since)
 	{
@@ -29,6 +30,11 @@ public class StubSocialMediaProvider : ISocialMediaProvider
 			;
 
 		return Task.FromResult(testContent.Generate(10).AsEnumerable());
+	}
+
+	public Task StartAsync()
+	{
+		return Task.CompletedTask;
 	}
 }
 
@@ -55,5 +61,12 @@ public class StartStubSocialMediaProvider : IConfigureProvider
 		services.AddSingleton<ISocialMediaProvider, StubSocialMediaProvider>();
 
 		return services;
+	}
+
+	public async Task<IServiceCollection> RegisterServices(IServiceCollection services, CancellationToken cancellationToken = default)
+	{
+		services.AddSingleton<ISocialMediaProvider, StubSocialMediaProvider>();
+
+		return await Task.FromResult(services);
 	}
 }

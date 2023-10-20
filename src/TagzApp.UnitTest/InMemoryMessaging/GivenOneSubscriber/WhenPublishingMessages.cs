@@ -1,10 +1,8 @@
-﻿using TagzApp.Common.Models;
-
-namespace TagzApp.UnitTest.InMemoryMessaging.GivenOneSubscriber;
+﻿namespace TagzApp.UnitTest.InMemoryMessaging.GivenOneSubscriber;
 public class WhenPublishingMessages
 {
 
-	protected InMemoryContentMessaging _Sut = new InMemoryContentMessaging();
+	protected InMemoryContentMessaging _Sut = new();
 
 	private readonly Hashtag _Tag = new() { Text = "Test" };
 
@@ -17,6 +15,7 @@ public class WhenPublishingMessages
 			ProfileUri = new Uri("http://myta.gg"),
 		},
 		Provider = "TEST",
+		ProviderId = "test-id",
 		SourceUri = new Uri("http://myta.gg/1"),
 		Text = "This is a test",
 		Timestamp = DateTimeOffset.Now,
@@ -28,7 +27,7 @@ public class WhenPublishingMessages
 	{
 
 		// Arrange
-		Content published = null;
+		Content published = null!;
 		_Sut.SubscribeToContent(_Tag, (content) => published = content);
 
 		// Act

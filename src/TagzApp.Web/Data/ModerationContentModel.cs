@@ -1,5 +1,3 @@
-﻿using TagzApp.Common.Models;
-
 namespace TagzApp.Web.Data;
 
 /// <summary>
@@ -14,25 +12,27 @@ namespace TagzApp.Web.Data;
 /// <param name="AuthorProfileImageUri">Profile Image URI of the author of the content</param>
 /// <param name="Text">Text of the content</param>
 public record ModerationContentModel(
-	string Provider, 
+	string Provider,
 	string ProviderId,
-	string Type, 
-	string SourceUri, 
-	DateTimeOffset Timestamp, 
-	string AuthorDisplayName, 
+	string Type,
+	string SourceUri,
+	DateTimeOffset Timestamp,
+	string AuthorDisplayName,
 	string AuthorUserName,
-	string AuthorProfileUri, 
-	string AuthorProfileImageUri, 
+	string AuthorProfileUri,
+	string AuthorProfileImageUri,
 	string Text,
 	Card? PreviewCard,
 	ModerationState State,
 	string? Reason,
 	string? Moderator,
-	DateTimeOffset? ModerationTimestamp
+	DateTimeOffset? ModerationTimestamp,
+	Emote[] Emotes
 )
 {
 
-	public static ModerationContentModel ToModerationContentModel(Content content, ModerationAction action = null) {
+	public static ModerationContentModel ToModerationContentModel(Content content, ModerationAction? action = null)
+	{
 		return new ModerationContentModel(
 			content.Provider,
 			content.ProviderId,
@@ -48,7 +48,8 @@ public record ModerationContentModel(
 			action?.State ?? ModerationState.Pending,
 			action?.Reason,
 			action?.Moderator,
-			action?.Timestamp
+			action?.Timestamp,
+			content.Emotes ?? new Emote[0]
 		);
 	}
 
