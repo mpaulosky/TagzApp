@@ -7,10 +7,24 @@
 		Rejected: 2,
 	};
 
+	const ApprovalFilter = {
+		All: '-1',
+		Approved: '1',
+		Rejected: '2',
+		Unmoderated: '0',
+	};
+
+	var tagCsv = '';
 	var paused = false;
 	var rolloverPause = false;
 	var pauseQueue = [];
 	var pauseTimeout;
+	var approvedFilterStatus = ApprovalFilter.All;
+	var providerFilter = [];
+	var cursorProviderId = null;
+	var currentModal = null;
+	var modalWindow = null;
+
 	const waterfallMaxEntries = 100;
 	const moderationMaxEntries = 500;
 
@@ -69,6 +83,13 @@
 		});
 	}
 
+	function RemoveActivePanel() {
+		if (document.querySelector('.active_panel')) {
+			// remove the active panel
+			document.querySelector('.active_panel').remove();
+		}
+	}
+
 	function FormatMessage(content, additionalClass, onclick, onmouseenter) {
 		if (taggedContent.querySelector('.spinner-border')) {
 			taggedContent.querySelector('.spinner-border').remove();
@@ -99,7 +120,7 @@
 		newMessage.innerHTML = `
 		<img class="ProfilePicture" src="${content.authorProfileImageUri}" alt="${
 			content.authorDisplayName
-		}" />
+		}" onerror="this.src='/img/user.jpg';" />
 		<div class="byline">
 			<div class="author">${content.authorDisplayName} <i class="autoMod"></i></div>
 			<div class="authorUserName" title="${content.authorUserName}">${
@@ -107,13 +128,13 @@
 			}</div>
 		</div>
 		<i class="provider bi ${MapProviderToIcon(content.provider)}"></i>
-		<div class="time">${newMessageTime.toLocaleString(undefined, {
+		<div class="time"><div>${newMessageTime.toLocaleString(undefined, {
 			day: 'numeric',
-			month: 'long',
+			month: 'short',
 			year: 'numeric',
 			hour: 'numeric',
 			minute: '2-digit',
-		})}<div class="autoModReason"></div></div>
+		})}</div><div class="autoModReason"></div></div>
 
 		<div class="content">${FormatContextWithEmotes(content)}</div>`;
 
@@ -130,9 +151,23 @@
 		}
 
 		if (onclick) {
+			newMessage.addEventListener('touchend', (ev) => {
+				window.setTimeout(() => onclick(ev), 100);
+			});
 		} else {
 			newMessage.addEventListener('click', function (ev) {
 				var el = ev.target.closest('article');
+
+				if (currentModal == content.providerId) return;
+				currentModal = content.providerId;
+
+				if (modalWindow) modalWindow.hide();
+
+				modalWindow = new bootstrap.Modal(
+					document.getElementById('contentModal'),
+				);
+
+				// modalWindow.modal('hide');
 
 				connection.invoke(
 					'SendMessageToOverlay',
@@ -170,18 +205,17 @@
 					`${MapProviderToIcon(content.provider)}`,
 				);
 
-				document.querySelector(
-					'.modal-header .time',
-				).innerText = `${newMessageTime.toLocaleString(undefined, {
-					day: 'numeric',
-					month: 'long',
-					year: 'numeric',
-					hour: 'numeric',
-					minute: '2-digit',
-				})}`;
+				document.querySelector('.modal-header .time').innerText =
+					`${newMessageTime.toLocaleString(undefined, {
+						day: 'numeric',
+						month: 'long',
+						year: 'numeric',
+						hour: 'numeric',
+						minute: '2-digit',
+					})}`;
 
 				let modalBody = (document.querySelector('.modal-body').innerHTML =
-					content.text);
+					FormatContextWithEmotes(content));
 
 				if (
 					content.previewCard &&
@@ -197,10 +231,6 @@
 				</div>
 			`;
 				}
-
-				let modalWindow = new bootstrap.Modal(
-					document.getElementById('contentModal'),
-				);
 
 				// NOTE: Let's not immediately turn off pause coming back from a modal
 				//document.getElementById('contentModal').addEventListener('hide.bs.modal', function (ev) {
@@ -289,9 +319,8 @@
 		content.reason = content.reason.replace('4', 'Medium');
 		content.reason = content.reason.replace('6', 'High');
 		content.reason = content.reason.replace('.', '');
-		card.querySelector(
-			'.autoModReason',
-		).innerText = `AI Reason ( ${content.reason} )`;
+		card.querySelector('.autoModReason').innerText =
+			`AI Reason ( ${content.reason} )`;
 	}
 
 	function MapProviderToIcon(provider) {
@@ -299,6 +328,9 @@
 		switch (cssClass) {
 			case 'twitter':
 				cssClass = 'twitter-x';
+				break;
+			case 'website':
+				cssClass = 'globe2';
 				break;
 			case 'youtube-chat':
 				cssClass = 'youtube';
@@ -324,19 +356,46 @@
 				.substring(emote.pos, emote.length + emote.pos + 1)
 				.trim();
 			var emoteHtml = `<img class="emote" src="${emoteUrl}"  />`;
-			console.log(
-				`Formatting text: '${text}' with emote at ${emote.pos}, with length ${emote.length} and found text ${emoteName}`,
-			);
+			// console.log(
+			// 	`Formatting text: '${text}' with emote at ${emote.pos}, with length ${emote.length} and found text ${emoteName}`,
+			// );
 			toReplace.push({ name: emoteName, html: emoteHtml });
 		}
 
 		for (var r in toReplace) {
 			var item = toReplace[r];
-			console.log(`Replacing ${item.name} with ${item.html}`);
+			// console.log(`Replacing ${item.name} with ${item.html}`);
 			text = text.replace(item.name, item.html);
 		}
 
 		return text;
+	}
+
+	function LoadAdditionalContentForFilters() {
+		// only proceed if less than 20 article elements are visible
+		if (
+			document.querySelectorAll('article:not([style*="display: none"])')
+				.length < 20
+		)
+			return;
+
+		// use the SignalR connection to call the server and get the additional content
+		connection
+			.invoke(
+				'GetFilteredContentByTag',
+				tagCsv,
+				providerFilter,
+				approvedFilterStatus,
+			)
+			.then(function (result) {
+				console.log(
+					`Received ${result.length} additional messages from server`,
+				);
+				result.forEach(function (content) {
+					FormatMessageForModeration(content);
+				});
+				window.Masonry.resizeAllGridItems();
+			});
 	}
 
 	function ApproveMessage(content) {
@@ -387,14 +446,21 @@
 					rolloverPause = false;
 					FormatPauseButton();
 					ResumeFromPause();
-				}, 1500);
+				}, 500);
 			}
 		});
 	}
 
 	function showModerationPanel(ev) {
 		var hovered = ev.target.closest('article');
-		if (hovered.querySelector('#moderationAction')) return;
+
+		// Remove all moderationAction elements inside of articles
+		var panels = document.querySelectorAll('article #moderationAction');
+		panels.forEach(function (panel) {
+			panel.remove();
+		});
+
+		if (hovered == null || hovered.querySelector('#moderationAction')) return;
 
 		// pause updates
 		window.clearTimeout(pauseTimeout);
@@ -413,15 +479,34 @@
 		hoverPanel
 			.querySelector('i.approve')
 			.addEventListener('click', function (ev) {
-				connection.invoke(
-					'SetStatus',
-					hovered.getAttribute('data-provider'),
-					hovered.getAttribute('data-providerid'),
-					ModerationState.Approved,
-				);
-				hoverPanel.remove();
-				hovered.classList.remove('status-rejected');
-				hovered.classList.add('status-approved');
+				let approveFunc = function () {
+					connection.invoke(
+						'SetStatus',
+						hovered.getAttribute('data-provider'),
+						hovered.getAttribute('data-providerid'),
+						ModerationState.Approved,
+					);
+					hoverPanel.remove();
+					hovered.classList.remove('status-rejected');
+					hovered.classList.add('status-approved');
+				};
+
+				if (hovered.classList.contains('status-rejected')) {
+					// Confirm that we are flipping this
+					swal({
+						title: 'Are you sure?',
+						text: 'This message was previously rejected. Are you sure you want to approve it?',
+						icon: 'warning',
+						buttons: true,
+						dangerMode: true,
+					}).then((willApprove) => {
+						if (willApprove) {
+							approveFunc();
+						}
+					});
+				} else {
+					approveFunc();
+				}
 			});
 
 		hoverPanel
@@ -436,6 +521,7 @@
 				hoverPanel.remove();
 				hovered.classList.remove('status-approved');
 				hovered.classList.add('status-rejected');
+				hovered.classList.add('status-humanmod');
 			});
 
 		hovered.insertBefore(hoverPanel, hovered.firstElementChild);
@@ -448,7 +534,7 @@
 					rolloverPause = false;
 					FormatPauseButton();
 					ResumeFromPause();
-				}, 1500);
+				}, 500);
 			}
 
 			// cleanup the moderation overlay
@@ -491,6 +577,9 @@
 	}
 
 	function AddModerator(moderator) {
+		// Don't double add the moderator
+		if (document.getElementById('moderator-' + moderator.email)) return;
+
 		var moderatorList = document.querySelector('.currentModerators');
 
 		var newMod = document.createElement('img');
@@ -537,15 +626,347 @@
 		pauseQueue = [];
 	}
 
+	function HandleKeyPress(ev) {
+		let height = 0;
+		try {
+			height = document.querySelector('article .bi').offsetHeight;
+		} catch {
+			return;
+		}
+
+		function PauseNewContentFor5Seconds() {
+			window.clearTimeout(pauseTimeout);
+			if (!paused) {
+				paused = true;
+				rolloverPause = true;
+				FormatPauseButton();
+			}
+
+			pauseTimeout = window.setTimeout(() => {
+				paused = false;
+				rolloverPause = false;
+				FormatPauseButton();
+				ResumeFromPause();
+			}, 5000);
+		}
+
+		switch (ev.key) {
+			case 'p':
+				paused = !paused;
+				FormatPauseButton();
+				if (!paused) ResumeFromPause();
+				break;
+			// for h,j,k,l and the arrow keys start navigating the cursor
+			case 'h':
+			case 'ArrowLeft':
+				// move the cursor left
+				if (cursorProviderId == null) {
+					cursorProviderId =
+						taggedContent.firstElementChild.getAttribute('data-providerid');
+				} else {
+					const thisOne = document.querySelector(
+						`[data-providerid='${cursorProviderId}']`,
+					);
+					const rect = thisOne.getBoundingClientRect();
+
+					var above = null;
+					for (var j = 0; j < 20; j++) {
+						// Look for an ARTICLE to the left of the current cursor position, if not found, look 10 pixels lower for an article
+
+						const aboveElements = document.elementsFromPoint(
+							rect.x - height,
+							rect.y + j * 10,
+						);
+
+						// inspect the elements in aboveElements and assign the variable above to the first article element
+						for (var i = 0; i < aboveElements.length; i++) {
+							if (aboveElements[i].tagName == 'ARTICLE') {
+								above = aboveElements[i];
+								break;
+							}
+						}
+
+						if (above != null && above.tagName == 'ARTICLE') break;
+					}
+
+					// check if above is an article element
+					if (above && above.tagName == 'ARTICLE') {
+						document
+							.querySelector(`[data-providerid='${cursorProviderId}']`)
+							.classList.remove('keyboard-cursor');
+						cursorProviderId = above.getAttribute('data-providerid');
+					}
+				}
+				RemoveActivePanel();
+				PauseNewContentFor5Seconds();
+
+				break;
+			case 'l':
+			case 'ArrowRight':
+				// move the cursor right
+				if (cursorProviderId == null) {
+					cursorProviderId =
+						taggedContent.firstElementChild.getAttribute('data-providerid');
+				} else {
+					const thisOne = document.querySelector(
+						`[data-providerid='${cursorProviderId}']`,
+					);
+					const rect = thisOne.getBoundingClientRect();
+
+					var above = null;
+					for (var j = 0; j < 20; j++) {
+						const aboveElements = document.elementsFromPoint(
+							rect.x + rect.width + height,
+							rect.y + j * 10,
+						);
+
+						// inspect the elements in aboveElements and assign the variable above to the first article element
+						for (var i = 0; i < aboveElements.length; i++) {
+							if (aboveElements[i].tagName == 'ARTICLE') {
+								above = aboveElements[i];
+								break;
+							}
+						}
+
+						if (above != null && above.tagName == 'ARTICLE') break;
+					}
+
+					// check if above is an article element
+					if (above && above.tagName == 'ARTICLE') {
+						document
+							.querySelector(`[data-providerid='${cursorProviderId}']`)
+							.classList.remove('keyboard-cursor');
+						cursorProviderId = above.getAttribute('data-providerid');
+					}
+				}
+				RemoveActivePanel();
+				PauseNewContentFor5Seconds();
+
+				break;
+			case 'k':
+			case 'ArrowUp':
+				// move the cursor up
+				if (cursorProviderId == null) {
+					cursorProviderId =
+						taggedContent.firstElementChild.getAttribute('data-providerid');
+				} else {
+					for (var i = 0; i < 5; i++) {
+						const thisOne = document.querySelector(
+							`[data-providerid='${cursorProviderId}']`,
+						);
+						const rect = thisOne.getBoundingClientRect();
+						const aboveElements = document.elementsFromPoint(
+							rect.x,
+							rect.y - height,
+						);
+
+						// inspect the elements in aboveElements and assign the variable above to the first article element
+						var above = null;
+						for (var i = 0; i < aboveElements.length; i++) {
+							if (aboveElements[i].tagName == 'ARTICLE') {
+								above = aboveElements[i];
+								break;
+							}
+						}
+
+						// check if above is an article element
+						if (above && above.tagName == 'ARTICLE') {
+							document
+								.querySelector(`[data-providerid='${cursorProviderId}']`)
+								.classList.remove('keyboard-cursor');
+							cursorProviderId = above.getAttribute('data-providerid');
+							break;
+						}
+
+						document.getElementById('taggedContent').scrollBy(0, -72);
+					}
+				}
+
+				document
+					.querySelector(`[data-providerid='${cursorProviderId}']`)
+					.classList.add('keyboard-cursor');
+
+				RemoveActivePanel();
+				PauseNewContentFor5Seconds();
+				break;
+			case 'j':
+			case 'ArrowDown':
+				// move the cursor down
+				if (cursorProviderId == null) {
+					cursorProviderId =
+						taggedContent.firstElementChild.getAttribute('data-providerid');
+				} else {
+					for (var i = 0; i < 5; i++) {
+						const thisOne = document.querySelector(
+							`[data-providerid='${cursorProviderId}']`,
+						);
+						const rect = thisOne.getBoundingClientRect();
+						const aboveElements = document.elementsFromPoint(
+							rect.x,
+							rect.y + rect.height + height,
+						);
+
+						// inspect the elements in aboveElements and assign the variable above to the first article element
+						var above = null;
+						for (var i = 0; i < aboveElements.length; i++) {
+							if (aboveElements[i].tagName == 'ARTICLE') {
+								above = aboveElements[i];
+								break;
+							}
+						}
+
+						// check if above is an article element
+						if (above && above.tagName == 'ARTICLE') {
+							document
+								.querySelector(`[data-providerid='${cursorProviderId}']`)
+								.classList.remove('keyboard-cursor');
+							cursorProviderId = above.getAttribute('data-providerid');
+							break;
+						}
+
+						try {
+							let taggedContent = document.getElementById('taggedContent');
+							let tcHeight = taggedContent.scrollHeight;
+							if (
+								taggedContent.scrollTop + taggedContent.offsetHeight + height >
+								tcHeight
+							)
+								return;
+							taggedContent.scrollBy(0, height);
+						} catch (ex) {
+							break;
+						}
+					}
+				}
+
+				RemoveActivePanel();
+				PauseNewContentFor5Seconds();
+				break;
+			case 'Enter':
+				if (document.querySelector('.active_panel')) {
+					RemoveActivePanel();
+				} else {
+					// bring up the moderation panel
+					const card = document.querySelector(
+						`[data-providerid='${cursorProviderId}']`,
+					);
+					if (card) showModerationPanel({ target: card });
+				}
+				break;
+			case 'y':
+				if (document.querySelector('.active_panel') == null) return;
+
+				var thisCard = document.querySelector(
+					`[data-providerid='${cursorProviderId}']`,
+				);
+
+				// Approve the current message
+				let approveFunc = function () {
+					connection.invoke(
+						'SetStatus',
+						thisCard.getAttribute('data-provider'),
+						thisCard.getAttribute('data-providerid'),
+						ModerationState.Approved,
+					);
+					thisCard.classList.remove('status-rejected');
+					thisCard.classList.add('status-approved');
+				};
+
+				if (thisCard.classList.contains('status-rejected')) {
+					// Confirm that we are flipping this
+					swal({
+						title: 'Are you sure?',
+						text: 'This message was previously rejected. Are you sure you want to approve it?',
+						icon: 'warning',
+						buttons: true,
+						dangerMode: true,
+					}).then((willApprove) => {
+						if (willApprove) {
+							approveFunc();
+						}
+					});
+				} else {
+					approveFunc();
+				}
+
+				break;
+			case 'n':
+				if (document.querySelector('.active_panel') == null) return;
+
+				let rejectCard = document.querySelector(
+					`[data-providerid='${cursorProviderId}']`,
+				);
+
+				connection.invoke(
+					'SetStatus',
+					rejectCard.getAttribute('data-provider'),
+					rejectCard.getAttribute('data-providerid'),
+					ModerationState.Rejected,
+				);
+				rejectCard.classList.remove('status-approved');
+				rejectCard.classList.add('status-rejected');
+				rejectCard.classList.add('status-humanmod');
+
+				break;
+		}
+
+		// Set the new cursor position
+		if (
+			cursorProviderId != null &&
+			document.querySelector(`[data-providerid='${cursorProviderId}']`)
+		) {
+			document
+				.querySelector(`[data-providerid='${cursorProviderId}']`)
+				.classList.add('keyboard-cursor');
+		}
+	}
+
 	const t = {
 		Tags: [],
+
+		ActivateKeyboardNavigation: function () {
+			window.onkeydown = HandleKeyPress;
+		},
 
 		MapProviderToIconClass: function (provider) {
 			return MapProviderToIcon(provider);
 		},
 
+		FormatContentWithEmotes: function (content) {
+			return FormatContextWithEmotes(content);
+		},
+
+		FilterByApprovalStatus: function (status) {
+			let taggedContent = document.getElementById('taggedContent');
+			approvedFilterStatus = status;
+			switch (status) {
+				case ApprovalFilter.All:
+					taggedContent.classList.remove('filter-approvedOnly');
+					taggedContent.classList.remove('filter-rejectedOnly');
+					taggedContent.classList.remove('filter-needsModeration');
+					break;
+				case ApprovalFilter.Approved:
+					taggedContent.classList.add('filter-approvedOnly');
+					taggedContent.classList.remove('filter-rejectedOnly');
+					taggedContent.classList.remove('filter-needsModeration');
+					break;
+				case ApprovalFilter.Rejected:
+					taggedContent.classList.remove('filter-approvedOnly');
+					taggedContent.classList.add('filter-rejectedOnly');
+					taggedContent.classList.remove('filter-needsModeration');
+					break;
+				case ApprovalFilter.Unmoderated:
+					taggedContent.classList.remove('filter-approvedOnly');
+					taggedContent.classList.remove('filter-rejectedOnly');
+					taggedContent.classList.add('filter-needsModeration');
+					break;
+			}
+
+			LoadAdditionalContentForFilters();
+		},
+
 		ListenForWaterfallContent: async function (tags) {
-			var tagCsv = encodeURI(tags);
+			tagCsv = encodeURI(tags);
 			t.Tags = tags.split(',');
 
 			connection = new signalR.HubConnectionBuilder()
@@ -572,6 +993,16 @@
 				});
 			});
 
+			// Listen for the DisplayOverlay event and display the modal for the selected message
+			connection.on('DisplayOverlay', (content) => {
+				var item = document.querySelector(
+					`[data-providerid='${content.providerId}']`,
+				);
+				if (item) {
+					item.click();
+				}
+			});
+
 			// Start the connection.
 			await start();
 
@@ -588,7 +1019,7 @@
 		},
 
 		ListenForModerationContent: async function (tag) {
-			var tagCsv = encodeURI(tag);
+			tagCsv = encodeURI(tag);
 
 			connection = new signalR.HubConnectionBuilder()
 				.withUrl(`/mod?t=${tagCsv}`)
@@ -650,6 +1081,48 @@
 				});
 				window.Masonry.resizeAllGridItems();
 			});
+
+			connection.invoke('GetCurrentModerators').then(function (result) {
+				result.forEach(function (moderator) {
+					AddModerator(moderator);
+				});
+				window.Masonry.resizeAllGridItems();
+			});
+		},
+
+		InitializeProviderFilter: function (providers) {
+			providerFilter = providers;
+		},
+
+		ToggleProviderFilter: function (provider) {
+			// console.log(`Before Toggle: ${providerFilter} -- toggling ${provider}`);
+
+			if (providerFilter.includes(provider)) {
+				providerFilter = providerFilter.filter(function (item) {
+					return item != provider;
+				});
+
+				var style = document.getElementById(`providerFilter-${provider}`);
+				if (style) style.remove();
+
+				// Add a css rule to the page
+				var style = document.createElement('style');
+				style.setAttribute('id', `providerFilter-${provider}`);
+				style.innerHTML = `article[data-provider='${provider}'] { display: none!important; }`;
+				document.head.appendChild(style);
+			} else {
+				providerFilter.push(provider);
+				// Remove the css rule from the page
+				var style = document.getElementById(`providerFilter-${provider}`);
+				if (style) style.remove();
+
+				var style = document.createElement('style');
+				style.setAttribute('id', `providerFilter-${provider}`);
+				style.innerHTML = `article[data-provider='${provider}'] { display: grid; }`;
+				document.head.appendChild(style);
+			}
+
+			if (providerFilter.length > 0) LoadAdditionalContentForFilters();
 		},
 	};
 

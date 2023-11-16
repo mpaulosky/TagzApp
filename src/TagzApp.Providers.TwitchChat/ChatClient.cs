@@ -74,6 +74,9 @@ public class ChatClient : IChatClient
 
 	public string ChannelName { get; }
 	public string ChatBotName { get; }
+	public bool IsRunning => _ReceiveMessagesThread.IsAlive;
+
+	public bool IsConnected { get; private set; }
 
 	private readonly string _OAuthToken;
 	private readonly CancellationTokenSource _Shutdown;
@@ -81,7 +84,7 @@ public class ChatClient : IChatClient
 	private void Connect()
 	{
 
-		_TcpClient = new TcpClient("irc.chat.twitch.tv", 80);
+		_TcpClient = new TcpClient("irc.chat.twitch.tv", 6667);
 
 		inputStream = new StreamReader(_TcpClient.GetStream());
 		outputStream = new StreamWriter(_TcpClient.GetStream());
@@ -230,10 +233,10 @@ public class ChatClient : IChatClient
 		//if (userName.Equals(ChatBotName, StringComparison.InvariantCultureIgnoreCase)) return; // Exit and do not process if the bot posted this message
 
 
-		//if (!string.IsNullOrEmpty(userName) && msg.Contains($" JOIN #{ChannelName}"))
-		//{
-		//	UserJoined?.Invoke(this, new ChatUserJoinedEventArgs { UserName = userName });
-		//}
+		if (msg.Contains($"{ChatBotName} :Welcome, GLHF!",StringComparison.InvariantCultureIgnoreCase))
+		{
+			IsConnected = true; 
+		}
 
 		// Review messages sent to the channel
 		if (reChatMessage.IsMatch(msg))

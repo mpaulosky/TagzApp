@@ -6,7 +6,7 @@ using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Services;
 using Google.Apis.YouTube.v3;
 using Google.Apis.YouTube.v3.Data;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 
 namespace TagzApp.Providers.YouTubeChat;
 
@@ -32,13 +32,15 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 	private bool _DisposedValue;
 	private string _NextPageToken;
 
-	public YouTubeChatProvider(YouTubeChatConfiguration config, IOptions<ApplicationConfiguration> appConfig)
+	private SocialMediaStatus _Status = SocialMediaStatus.Unhealthy;
+	private string _StatusMessage = "Not started";
+
+	public YouTubeChatProvider(YouTubeChatConfiguration config, IConfiguration configuration)
 	{
 		_ChatConfig = config;
+		var rawConfig = configuration["ApplicationConfiguration:YouTubeChatConfiguration"];
 
-		if (appConfig.Value.YouTubeChatConfiguration == "{}") return;
-
-		var youtubeConfig = JsonSerializer.Deserialize<YouTubeChatApplicationConfiguration>(appConfig.Value.YouTubeChatConfiguration);
+		var youtubeConfig = JsonSerializer.Deserialize<YouTubeChatApplicationConfiguration>(rawConfig);
 		RefreshToken = youtubeConfig.RefreshToken;
 		LiveChatId = youtubeConfig.LiveChatId;
 		YouTubeEmailId = youtubeConfig.ChannelEmail;
@@ -70,25 +72,46 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 				_GoogleException = $"{LiveChatId}:{ex.Message}";
 				LiveChatId = string.Empty;
 			}
+
+			_Status = SocialMediaStatus.Unhealthy;
+			_StatusMessage = $"Exception while fetching YouTubeChat: {ex.Message}";
+
 			return Enumerable.Empty<Content>();
 		}
 
-		return contents.Items.Select(i => new Content
-		{
-			Author = new Creator
-			{
-				DisplayName = i.AuthorDetails.DisplayName,
-				ProfileImageUri = new Uri(i.AuthorDetails.ProfileImageUrl),
-				ProfileUri = new Uri($"https://www.youtube.com/channel/{i.AuthorDetails.ChannelId}")
-			},
-			Provider = Id,
-			ProviderId = i.Id,
-			Text = i.Snippet.DisplayMessage,
-			SourceUri = new Uri($"https://youtube.com/livechat/{LiveChatId}"),
-			Timestamp = DateTimeOffset.Parse(i.Snippet.PublishedAtRaw),
-			Type = ContentType.Message,
-			HashtagSought = tag?.Text ?? ""
-		}).ToArray();
+		_Status = SocialMediaStatus.Healthy;
+		_StatusMessage = $"OK -- adding ({contents.Items.Count}) messages for chatid '{LiveChatId}' at {DateTimeOffset.UtcNow}";
+
+		try {
+			var outItems = contents.Items.Select(i => new Content
+				{
+					Author = new Creator
+					{
+						DisplayName = i.AuthorDetails.DisplayName,
+						ProfileImageUri = new Uri(i.AuthorDetails.ProfileImageUrl),
+						ProfileUri = new Uri($"https://www.youtube.com/channel/{i.AuthorDetails.ChannelId}")
+					},
+					Provider = Id,
+					ProviderId = i.Id,
+					Text = i.Snippet.DisplayMessage,
+					SourceUri = new Uri($"https://youtube.com/livechat/{LiveChatId}"),
+					Timestamp = DateTimeOffset.Parse(i.Snippet.PublishedAtRaw),
+					Type = ContentType.Message,
+					HashtagSought = tag?.Text ?? ""
+				}).ToArray();
+			return outItems;
+
+		} catch (Exception ex) {
+
+			Console.WriteLine($"Exception while parsing YouTubeChat: {ex.Message}");
+
+			_Status = SocialMediaStatus.Unhealthy;
+			_StatusMessage = $"Exception while parsing YouTubeChat: {ex.Message}";
+
+			return Enumerable.Empty<Content>();
+
+		}
+
 
 	}
 
@@ -115,6 +138,10 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 		catch (Exception ex)
 		{
 			Console.WriteLine($"Exception while refreshing token: {ex.Message}");
+
+			_Status = SocialMediaStatus.Unhealthy;
+			_StatusMessage = $"Exception while refreshing token: {ex.Message}";
+
 			throw;
 		}
 		var credential = new UserCredential(flow, "me", token);
@@ -123,6 +150,10 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 		{
 			HttpClientInitializer = credential
 		});
+
+		_Status = SocialMediaStatus.Degraded;
+		_StatusMessage = "Starting YouTubeChat client";
+
 		return _Service;
 	}
 
@@ -166,6 +197,10 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 		{
 			// GoogleApiException: The service youtube has thrown an exception. HttpStatusCode is Forbidden. The user is not enabled for live streaming.
 			Console.WriteLine($"Exception while fetching YouTube broadcasts: {ex.Message}");
+
+			_Status = SocialMediaStatus.Unhealthy;
+			_StatusMessage = $"Exception while fetching YouTube broadcasts: {ex.Message}";
+
 			return Enumerable.Empty<YouTubeBroadcast>();
 		}
 
@@ -216,6 +251,8 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 		Dispose(disposing: true);
 		GC.SuppressFinalize(this);
 	}
+
+	public Task<(SocialMediaStatus Status, string Message)> GetHealth() => Task.FromResult((_Status, _StatusMessage));
 
 	#endregion
 

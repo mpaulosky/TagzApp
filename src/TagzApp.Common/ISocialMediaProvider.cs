@@ -16,6 +16,8 @@ public interface ISocialMediaProvider
 	/// </summary>
 	string DisplayName { get; }
 
+	virtual string DllName => DisplayName;
+
 	/// <summary>
 	/// Provider description
 	/// </summary>
@@ -33,6 +35,12 @@ public interface ISocialMediaProvider
 	/// <param name="since">Datestamp to search for content since</param>
 	/// <returns></returns>
 	Task<IEnumerable<Content>> GetContentForHashtag(Hashtag tag, DateTimeOffset since);
+
+	/// <summary>
+	/// Report the health of the provider
+	/// </summary>
+	/// <returns></returns>
+	Task<(SocialMediaStatus Status, string Message)> GetHealth();
 
 	/// <summary>
 	/// Start the provider

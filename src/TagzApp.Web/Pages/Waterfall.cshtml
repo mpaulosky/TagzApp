@@ -2,6 +2,7 @@
 @model TagzApp.Web.Pages.WaterfallModel
 @{
 	Layout = "_WaterfallLayout";
+	ViewData["Title"] = "Waterfall Display";
 	ViewBag.EnableFloatingHeader = true;
 }
 <div class="waterfallHeader">
@@ -15,23 +16,17 @@
 
 </div>
 
+<div id="pauseUpdates">
+	<i id="pauseButton" class="bi bi-pause-circle-fill text-info"></i>
+	<i id="pauseButton-bg" class="bi bi-circle-fill"></i>
+</div>
+
 <div id="taggedContent" class="">
 
-	@* 		<div class=" d-flex justify-content-center" style="width:100%;">
-
-	<div class="spinner-border" role="status">
-	<span class="visually-hidden">Loading...</span>
-	</div>
-
-	</div>
-	*@
-
-	<div id="pauseUpdates">
-		<i id="pauseButton" class="bi bi-pause-circle-fill text-info"></i>
-		<i id="pauseButton-bg" class="bi bi-circle-fill"></i>
-	</div>
 
 </div>
+
+<div id="footerFade"></div>
 
 
 <div class="modal fade show" id="contentModal" tabindex="-1" aria-labelledby="contentModalLabel" aria-hidden="true">
@@ -40,7 +35,7 @@
 
 				<div class="modal-front modal-content">
 					<div class="modal-header">
-						<img class="ProfilePicture" src="" alt="" />
+						<img class="ProfilePicture" src="" alt="" onerror="this.src='/img/user.jpg';" />
 						<div class="author"></div>
 						<div class="authorUserName" title=""></div>
 						<i class="provider bi"></i>
