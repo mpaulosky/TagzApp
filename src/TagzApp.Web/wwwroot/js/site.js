@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
 	var connection;
 
 	const ModerationState = {
@@ -138,11 +138,13 @@
 
 		<div class="content">${FormatContextWithEmotes(content)}</div>`;
 
+		if (content.providerId == '1697329414722199899') console.log(content);
+
 		if (content.previewCard) {
 			const tag =
 				content.previewCard.imageUri.split('.').pop() == 'mp4'
 					? "video muted='muted' controls='controls' autoplay"
-					: 'img onerror="this.onerror=null; this.style.display=\'none\';"';
+					: 'img onerror="this.onerror=null; window.TagzApp.FixEmbedImage(this);"';
 			newMessage.innerHTML += `
 				<div class="contentcard">
 					<${tag} src="${content.previewCard.imageUri}" class="card-img-top" alt="${content.previewCard.altText}" />
@@ -166,6 +168,10 @@
 				modalWindow = new bootstrap.Modal(
 					document.getElementById('contentModal'),
 				);
+
+				let thisModal = document.getElementById('contentModal');
+				thisModal.setAttribute('data-url', content.sourceUri);
+				thisModal.setAttribute('data-provider', content.provider);
 
 				// modalWindow.modal('hide');
 
@@ -218,13 +224,12 @@
 					FormatContextWithEmotes(content));
 
 				if (
-					content.previewCard &&
-					content.previewCard.imageUri.trim() != 'about:blank'
+					content.previewCard // && content.previewCard.imageUri.trim() != 'about:blank'
 				) {
 					const tag =
 						content.previewCard.imageUri.split('.').pop() == 'mp4'
 							? "video muted='muted' controls='controls' autoplay"
-							: 'img onerror="this.onerror=null; this.parentElement.style.display = \'none\';"';
+							: 'img onerror="this.onerror=null; window.TagzApp.FixEmbedImage(this);"';
 					document.querySelector('.modal-body').innerHTML += `
 				<div class="contentcard">
 					<${tag} src="${content.previewCard.imageUri}" class="card-img-top" alt="${content.previewCard.altText}" />
@@ -369,6 +374,21 @@
 		}
 
 		return text;
+	}
+
+	function FixEmbedImage(img) {
+		var theArticle = img.closest('[data-provider]');
+
+		if (
+			theArticle.dataset.provider == 'TWITTER' &&
+			!img.src.toString().includes('d.fxtwitter.com')
+		) {
+			img.src =
+				theArticle.dataset.url.replace('twitter.com', 'd.fxtwitter.com') +
+				'.jpg';
+		} else {
+			img.parentElement.style.display = 'none';
+		}
 	}
 
 	function LoadAdditionalContentForFilters() {
@@ -524,6 +544,17 @@
 				hovered.classList.add('status-humanmod');
 			});
 
+		hoverPanel.querySelector('i.more').addEventListener('click', function (ev) {
+			// navigate to the Message Details page for this message in a new tab
+			window.open(
+				`/MessageDetails/${hovered.getAttribute(
+					'data-provider',
+				)}|${hovered.getAttribute('data-providerid')}`,
+				'_blank',
+			);
+			hoverPanel.remove();
+		});
+
 		hovered.insertBefore(hoverPanel, hovered.firstElementChild);
 
 		hoverPanel.addEventListener('mouseleave', function (ev) {
@@ -597,6 +628,10 @@
 			FormatPauseButton();
 			if (!paused) ResumeFromPause();
 		});
+	}
+
+	function DisableContextMenu() {
+		document.addEventListener('contextmenu', (ev) => ev.preventDefault());
 	}
 
 	function FormatPauseButton() {
@@ -965,6 +1000,10 @@
 			LoadAdditionalContentForFilters();
 		},
 
+		FixEmbedImage: function (img) {
+			FixEmbedImage(img);
+		},
+
 		ListenForWaterfallContent: async function (tags) {
 			tagCsv = encodeURI(tags);
 			t.Tags = tags.split(',');
@@ -1016,6 +1055,8 @@
 					});
 					window.Masonry.resizeAllGridItems();
 				});
+
+			DisableContextMenu();
 		},
 
 		ListenForModerationContent: async function (tag) {
@@ -1068,6 +1109,11 @@
 
 			connection.on('RemoveModerator', (moderatorEmail) => {
 				document.getElementById('moderator-' + moderatorEmail).remove();
+			});
+
+			connection.on('NewBlockedUserCount', (newCount) => {
+				console.log('New blocked user count: ' + newCount);
+				document.getElementById('blockedCount').innerText = newCount;
 			});
 
 			// Start the connection.
