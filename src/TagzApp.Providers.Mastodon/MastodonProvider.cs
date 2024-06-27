@@ -1,23 +1,27 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Web;
+using TagzApp.Common.Telemetry;
 using TagzApp.Providers.Mastodon.Configuration;
 
 namespace TagzApp.Providers.Mastodon;
 
-internal class MastodonProvider : ISocialMediaProvider, IHasNewestId
+public class MastodonProvider : ISocialMediaProvider, IHasNewestId
 {
 
 	private readonly HttpClient _HttpClient;
 	private readonly ILogger _Logger;
+	private readonly ProviderInstrumentation? _Instrumentation;
 	private SocialMediaStatus _Status = SocialMediaStatus.Unhealthy;
 	private string _StatusMessage = "Not started";
 
 	public MastodonProvider(IHttpClientFactory httpClientFactory, ILogger<MastodonProvider> logger,
-		MastodonConfiguration configuration)
+		MastodonConfiguration configuration, ProviderInstrumentation? instrumentation = null)
 	{
 		_HttpClient = httpClientFactory.CreateClient(nameof(MastodonProvider));
 		_Logger = logger;
+		_Instrumentation = instrumentation;
+		Enabled = configuration.Enabled;
 
 		if (!string.IsNullOrWhiteSpace(configuration.Description))
 		{
@@ -32,6 +36,17 @@ internal class MastodonProvider : ISocialMediaProvider, IHasNewestId
 	public TimeSpan NewContentRetrievalFrequency => TimeSpan.FromSeconds(20);
 
 	public string NewestId { get; set; } = string.Empty;
+	public bool Enabled { get; }
+
+	public void Dispose()
+	{
+		// do nothing
+	}
+
+	public async Task<IProviderConfiguration> GetConfiguration(IConfigureTagzApp configure)
+	{
+		return await configure.GetConfigurationById<MastodonConfiguration>(MastodonConfiguration.AppSettingsSection);
+	}
 
 	public async Task<IEnumerable<Content>> GetContentForHashtag(Hashtag tag, DateTimeOffset since)
 	{
@@ -70,6 +85,17 @@ internal class MastodonProvider : ISocialMediaProvider, IHasNewestId
 
 		NewestId = messages!.OrderByDescending(m => m.id).First().id;
 
+		if (_Instrumentation is not null)
+		{
+			foreach (var username in messages?.Select(x => x.account?.username)!)
+			{
+				if (!string.IsNullOrEmpty(username))
+				{
+					_Instrumentation.AddMessage("mastodon", username);
+				}
+			}
+		}
+
 		var baseServerAddress = _HttpClient.BaseAddress?.Host.ToString();
 
 #pragma warning disable CS8604 // Possible null reference argument.
@@ -104,7 +130,17 @@ internal class MastodonProvider : ISocialMediaProvider, IHasNewestId
 		return Task.FromResult((_Status, _StatusMessage));
 	}
 
+	public async Task SaveConfiguration(IConfigureTagzApp configure, IProviderConfiguration providerConfiguration)
+	{
+		await configure.SetConfigurationById(MastodonConfiguration.AppSettingsSection, (MastodonConfiguration)providerConfiguration);
+	}
+
 	public Task StartAsync()
+	{
+		return Task.CompletedTask;
+	}
+
+	public Task StopAsync()
 	{
 		return Task.CompletedTask;
 	}

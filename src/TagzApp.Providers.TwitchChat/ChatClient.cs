@@ -41,11 +41,16 @@ public class ChatClient : IChatClient
 		_OAuthToken = oauthToken;
 		Logger = logger;
 
-		reChatMessage = new Regex($@"PRIVMSG #{channelName} :(.*)$");
-		reWhisperMessage = new Regex($@"WHISPER {chatBotName} :(.*)$");
+		SetRegularExpressionForChatMessages();
 
 		_Shutdown = new CancellationTokenSource();
 
+	}
+
+	private void SetRegularExpressionForChatMessages()
+	{
+		reChatMessage = new Regex($@"PRIVMSG #{ChannelName} :(.*)$");
+		reWhisperMessage = new Regex($@"WHISPER {ChatBotName} :(.*)$");
 	}
 
 	~ChatClient()
@@ -63,6 +68,8 @@ public class ChatClient : IChatClient
 	public void Init()
 	{
 
+		_Shutdown.TryReset();
+
 		Connect();
 
 		_ReceiveMessagesThread = new Thread(ReceiveMessagesOnThread);
@@ -72,7 +79,7 @@ public class ChatClient : IChatClient
 
 	public ILogger Logger { get; }
 
-	public string ChannelName { get; }
+	public string ChannelName { get; private set; }
 	public string ChatBotName { get; }
 	public bool IsRunning => _ReceiveMessagesThread.IsAlive;
 
@@ -167,7 +174,7 @@ public class ChatClient : IChatClient
 		var lastMessageReceivedTimestamp = DateTime.Now;
 		var errorPeriod = TimeSpan.FromSeconds(60);
 
-		while (true)
+		while (!_Shutdown.IsCancellationRequested)
 		{
 
 			Thread.Sleep(50);
@@ -176,11 +183,6 @@ public class ChatClient : IChatClient
 			{
 				Logger.LogError($"Haven't received a message in {errorPeriod.TotalSeconds} seconds");
 				lastMessageReceivedTimestamp = DateTime.Now;
-			}
-
-			if (_Shutdown.IsCancellationRequested)
-			{
-				break;
 			}
 
 			if (_TcpClient.Connected && _TcpClient.Available > 0)
@@ -217,14 +219,21 @@ public class ChatClient : IChatClient
 
 		}
 
-		Logger.LogWarning("Exiting ReceiveMessages Loop");
+		try
+		{
+			Logger.LogWarning("Exiting ReceiveMessages Loop");
+		}
+		catch
+		{
+			// Error while shutting down
+		}
 
 	}
 
 	private void ProcessMessage(string msg)
 	{
 
-		// Logger.LogTrace("Processing message: " + msg);
+		Logger.LogError("Processing message: " + msg);
 
 		var userName = "";
 		var message = "";
@@ -233,9 +242,9 @@ public class ChatClient : IChatClient
 		//if (userName.Equals(ChatBotName, StringComparison.InvariantCultureIgnoreCase)) return; // Exit and do not process if the bot posted this message
 
 
-		if (msg.Contains($"{ChatBotName} :Welcome, GLHF!",StringComparison.InvariantCultureIgnoreCase))
+		if (msg.Contains($"{ChatBotName} :Welcome, GLHF!", StringComparison.InvariantCultureIgnoreCase))
 		{
-			IsConnected = true; 
+			IsConnected = true;
 		}
 
 		// Review messages sent to the channel
@@ -353,6 +362,25 @@ public class ChatClient : IChatClient
 		Dispose(true);
 		GC.SuppressFinalize(this);
 	}
+
+	public void Stop()
+	{
+		_Shutdown?.Cancel();
+	}
+
+	public void ListenToNewChannel(string channelName)
+	{
+
+		// Issue IRC PART and JOIN commands to switch channels
+		SendMessage($"PART #{ChannelName}");
+		SendMessage($"JOIN #{channelName}");
+
+		ChannelName = channelName;
+
+		SetRegularExpressionForChatMessages();
+
+	}
+
 	#endregion
 }
 

@@ -1,0 +1,91 @@
+﻿@page "/admin/users"
+@using Gravatar
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize(Roles = RolesAndPolicies.Role.Admin)]
+@layout Admin.Shared.AdminLayout
+@inject UserManager<TagzAppUser> UserManager
+@inject NavigationManager NavigationManager
+@inject ApplicationConfiguration AppConfig
+@inject IJSRuntime Js
+@rendermode @(new InteractiveServerRenderMode(false))
+
+<PageTitle>System Administration: User Management</PageTitle>
+
+<h3>User Roles Management</h3>
+
+@if (AppConfig.SingleUserMode) {
+ <div>You're in Single User Mode
+
+    <p class="alert alert-primary" role="alert">Converting to Multi-User Mode is a one-way operation that cannot be reversed.  You will need to register as a new user and login with that user immediately to be granted Admin access.  After that, you can add more users with various roles.
+   </p>
+
+	<button type="button" class="btn btn-danger" @onclick="ConvertUserMode">Change to Multi-User Mode</button>
+
+ </div>
+} else {
+<table>
+	<tr>
+		@*<th>User ID</th>*@
+		<th style="width:20em; padding-left: 85px;">Name</th>
+		<th>User Email</th>
+		<th>Action</th>
+	</tr>
+	@foreach (var user in UserList.OrderBy(u => u.DisplayName))
+	{
+		<tr>
+			<td>
+				<img class="gravatar" title="Gravatar" src="@user.Email.ToGravatar()" />
+				@user.DisplayName
+			</td>
+			<td>@user.Email</td>
+			<td><span style="cursor: pointer" class="link-primary nav-link" @onclick="@(() => AssignRoles(user))">Assign Roles</span></td>
+		</tr>
+	}
+</table>
+
+<ManageRoles @ref="ManageRolesDialog" CurrentUser="SelectedUser" OnComplete="CloseManageRoles" />
+}
+
+@code {
+
+	[CascadingParameter]
+	private HttpContext HttpContext { get; set; } = default!;
+
+	private List<TagzAppUser> UserList { get; set; } = [];
+
+	private TagzAppUser SelectedUser { get; set; } = new();
+
+	private ManageRoles ManageRolesDialog = new();
+
+	override protected async Task OnParametersSetAsync()
+	{
+
+		if (AppConfig.SingleUserMode) return;
+
+		UserList = await UserManager.Users.ToListAsync();
+	}
+
+	private async Task AssignRoles(TagzAppUser user)
+	{
+		SelectedUser = user;
+		await ManageRolesDialog.Open();
+	}
+
+	private void CloseManageRoles()
+	{
+		SelectedUser = null;
+	}
+
+  private async Task ConvertUserMode()
+  {
+		var accepted = await Js.InvokeAsync<bool>("confirm", "Are you sure you would like to convert to multi-user mode?  This is a one-way operation and cannot be reversed");
+		if (accepted) {
+			AppConfig.SingleUserMode = false;
+   		await AppConfig.SaveConfiguration(ConfigureTagzAppFactory.Current);
+			Program.Restart();
+			NavigationManager.NavigateTo("/");
+		}
+  }
+
+}

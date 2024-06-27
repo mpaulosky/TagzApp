@@ -1,0 +1,145 @@
+﻿@using System.ComponentModel.DataAnnotations
+@inject ToastService ToastService
+@inject HttpClient Http
+@inject NavigationManager NavMgr
+@inject IConfiguration Config
+
+<UiProviderConfig ProviderName="TwitchChat" Health="@Health" ProviderIconCssClass="bi-twitch">
+
+	<EditForm Model="Model" OnValidSubmit="SaveConfig">
+		<AntiforgeryToken />
+		<ValidationSummary />
+
+		<div class="alert-primary" style="padding: 4px;">
+			<p>To configure the Twitch chat provider you will connect to a custom relay server managed by the TagzApp team. 
+			You will log into Twitch and your TagzApp installation will be updated with the appropriate configuration for
+				your login to access Twitch.
+			</p>
+			<p>None of your personal data or credentials are stored on the relay server.</p>
+		</div>
+
+		<dl>
+			<dt><label for="ChatBotName">Chat Bot Name:</label></dt>
+			<dd>
+				@if (string.IsNullOrEmpty(Model.ChatBotName) && !string.IsNullOrEmpty(LoginUrl))
+				{
+					<span>Not connected to Twitch</span> <a href="@LoginUrl" target="_blank">Click to login to Twitch</a>
+				}
+				else if (string.IsNullOrEmpty(Model.ChatBotName) && string.IsNullOrEmpty(LoginUrl))
+				{
+					<span class="alert-danger">Unable to connect to Twitch</span>
+				}
+				else
+				{
+					<span>@Model.ChatBotName (Connected)</span> 
+					
+					@if (string.IsNullOrEmpty(LoginUrl))
+					{
+						<span class="alert-danger" style="margin-left: 2em;">Unable to connect to Twitch</span>
+					}
+					else {
+						<a href="@LoginUrl" target="_blank" style="margin-left: 2em;">Click to change Twitch accounts</a>
+					}
+				}
+			</dd>
+ 			<dt><label for="ChannelName">Channel Name:</label></dt>
+			<dd>
+				<InputText name="ChannelName" @bind-Value="Model.ChannelName" placeholder="Twitch Channel Name" />
+				<ValidationMessage For="() => Model.ChannelName" class="text-danger" />
+			</dd>
+			<dt><label for="Enabled">Enabled:</label></dt>
+			<dd>
+				<InputCheckbox name="Enabled" @bind-Value="Model.Enabled" />
+			</dd>
+		</dl>
+
+		<button type="submit" class="btn btn-primary">Save</button>
+
+	</EditForm>
+
+</UiProviderConfig>
+
+@code {
+
+	[Parameter, EditorRequired]
+	public ISocialMediaProvider Provider { get; set; } = null!;
+
+	public (SocialMediaStatus Status, string Message) Health { get; set; } = (SocialMediaStatus.Unknown, string.Empty);
+
+	public string LoginUrl { get; set; } = "";
+
+	public ViewModel Model { get; set; } = new();
+
+	protected override async Task OnInitializedAsync()
+	{
+
+		// Twitch Relay URI
+		var twitchRelayUri = new Uri(new Uri(Config["TwitchRelayUri"]), "/api/GetLoginUrl");
+
+		try
+		{
+			var returnToUri = new Uri(new Uri(NavMgr.BaseUri), "/Admin/TwitchRelay");
+			var result = await Http.GetAsync($"{twitchRelayUri}?returnto={returnToUri}");
+			LoginUrl = await result.Content.ReadAsStringAsync();
+		} catch
+		{
+			LoginUrl = string.Empty;
+		}
+
+		await base.OnInitializedAsync();
+	}
+
+
+	protected override async Task OnParametersSetAsync()
+	{
+
+		var providerConfiguration = await Provider.GetConfiguration(ConfigureTagzAppFactory.Current);
+
+		Model = new ViewModel
+		{
+				ChatBotName = providerConfiguration.GetConfigurationByKey("ChatBotName"),
+				OAuthToken = providerConfiguration.GetConfigurationByKey("OAuthToken"),
+				ChannelName = providerConfiguration.GetConfigurationByKey("ChannelName"),
+				Enabled = string.IsNullOrEmpty(providerConfiguration.GetConfigurationByKey("Enabled")) ? false : bool.Parse(providerConfiguration.GetConfigurationByKey("Enabled"))
+			};
+
+		Health = await Provider.GetHealth();
+
+		await base.OnParametersSetAsync();
+
+	}
+
+	private async Task SaveConfig()
+	{
+
+		var providerConfiguration = await Provider.GetConfiguration(ConfigureTagzAppFactory.Current);
+
+		providerConfiguration.SetConfigurationByKey("ChatBotName", Model.ChatBotName);
+		providerConfiguration.SetConfigurationByKey("OAuthToken", Model.OAuthToken);
+		providerConfiguration.SetConfigurationByKey("ChannelName", Model.ChannelName);
+		providerConfiguration.SetConfigurationByKey("Enabled", Model.Enabled.ToString());
+
+		await Provider.SaveConfiguration(ConfigureTagzAppFactory.Current, providerConfiguration);
+		ToastService.Add($"Saved {providerConfiguration.Name} Configuration", MessageSeverity.Success);
+
+		// get the new health status
+		Health = await Provider.GetHealth();
+	}
+
+	public class ViewModel
+	{
+		// add properties for each of the fields you want to edit
+
+		[Required]
+		public string ChatBotName { get; set; } = string.Empty;
+
+		[Required]
+		public string OAuthToken { get; set; } = string.Empty;
+
+		[Required]
+		public string ChannelName { get; set; } = "csharpfritz";
+
+		public bool Enabled { get; set; }
+	}
+
+}

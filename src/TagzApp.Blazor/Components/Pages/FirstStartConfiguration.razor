@@ -1,0 +1,116 @@
+﻿@page "/FirstStartConfiguration"
+@using Microsoft.AspNetCore.Components.Sections
+@rendermode @(new InteractiveServerRenderMode(false))
+
+<PageTitle>First Start Configuration</PageTitle>
+
+<h1>First Start Configuration</h1>
+
+@if (CurrentConfig != null && CurrentConfig is EmptyConfigureTagzApp)
+{
+	var config = CurrentConfig as EmptyConfigureTagzApp;
+	if (!string.IsNullOrEmpty(config.Message))
+	{
+		<div class="alert alert-danger" role="alert">
+			@config.Message
+		</div>
+	}
+}
+
+@* Add a form to allow selection of a provider and setting a connection string *@
+<EditForm FormName="SiteConfig" Model="Config" OnValidSubmit="OnFormValidate">
+
+	<DataAnnotationsValidator />
+	<ValidationSummary />
+
+	<p>
+		Let's get some initial configuration for TagzApp to work properly. Would you like a basic configuration with all
+		settings stored in a single repository, or would you like an advanced configuration with separate storage for configuration,
+		content and security?
+	</p>
+
+	<div class="form-group">
+
+		<InputRadioGroup @bind-Value="Config.ConfigurationType">
+			<div>
+				<InputRadio class="form-check-input" Value="@("basic")" /> Basic
+				<InputRadio class="form-check-input" Value="@("advanced")" @onclick="@(() => Console.WriteLine("Hello from advanced mode!"))" /> Advanced
+			</div>
+		</InputRadioGroup>
+
+	</div>
+
+	<p>
+		We'll start with
+		a provider and connection string for where you'd like to save our
+		application configuration for the various content providers.
+	</p>
+
+	<div class="form-group config-basic">
+		<label for="provider">Basic Provider</label>
+		<InputSelect class="form-control" id="provider" @bind-Value="Config.Provider" 
+			@onchange="PrecalculateBasicConnectionString">
+			<option value="">- SELECT -</option>
+			<option value="Postgres">Postgres</option>
+			<option value="Sqlite">Sqlite - Good for a personal install</option>
+			<option value="InMemory">InMemory - Good for Testing</option>
+		</InputSelect>
+	</div>
+	<div class="form-group config-basic">
+		<label for="connectionString">Connection String</label>
+		<InputText class="form-control" id="connectionString" @bind-Value="Config.ConnectionString" />
+		@* Add a validation message *@
+		<span asp-validation-for="ConnectionString" class="text-danger"></span>
+	</div>
+
+	@if (Config.ConfigurationType == "advanced")
+	{
+
+		<p class="mt-4 config-advanced">
+			Next, let's specify the provider and database connection string for where we will be storing our content
+		</p>
+
+		@* Add fields to select a provider and connectionstring *@
+		<div class="form-group config-advanced">
+			<label for="contentProvider">Content Database Provider</label>
+			<InputSelect class="form-control" id="contentProvider" @bind-Value="Config.ContentProvider">
+				<option value="">- SELECT -</option>
+				<option value="Postgres">Postgres</option>
+				<option value="Sqlite">Sqlite</option>
+				<option value="InMemory">InMemory - Good for testing</option>
+			</InputSelect>
+		</div>
+		<div class="form-group config-advanced">
+			<label for="connectionString">Content Connection String</label>
+			<InputText class="form-control" id="connectionString" @bind-Value="Config.ContentConnectionString" />
+
+			<ValidationMessage For="@(() => Config.ContentConnectionString)" class="text-danger"></ValidationMessage>
+
+		</div>
+
+		<p class="mt-4 config-advanced">
+			Finally, let's specify the provider and database connection string for where we will be storing our user
+			accounts
+		</p>
+		<div class="form-group config-advanced">
+			<label for="contentProvider">Security Database Provider</label>
+			<InputSelect class="form-control" id="securityProvider" @bind-Value="Config.SecurityProvider">
+				<option value="">- SELECT -</option>
+				<option value="Postgres">Postgres</option>
+				<option value="Sqlite">Sqlite</option>
+			</InputSelect>
+
+		</div>
+		<div class="form-group config-advanced">
+			<label for="connectionString">Security Connection String</label>
+			<InputText class="form-control" id="securityConnectionString" @bind-Value="Config.SecurityConnectionString" />
+
+		</div>
+
+	}
+
+	<div class="form-group mt-2">
+		<button type="submit" class="btn btn-primary form-control">Submit</button>
+	</div>
+
+</EditForm>

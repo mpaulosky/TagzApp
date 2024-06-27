@@ -1,11 +1,14 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using TagzApp.Communication;
+using TagzApp.Security;
 using TagzApp.Storage.Postgres;
-using TagzApp.Web.Services;
-using AppConfig = TagzApp.Storage.Postgres.ApplicationConfiguration;
+using TagzApp.Storage.Postgres.SafetyModeration;
+using TagzApp.Storage.Postgres.Security.Migrations;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -14,50 +17,60 @@ public static class AppExtensions
 
 	private static Task _MigrateTask = Task.CompletedTask;
 
-	public static IServiceCollection AddPostgresServices(this IServiceCollection services, IConfiguration configuration)
+	public static IServiceCollection AddPostgresServices(this IHostApplicationBuilder builder, IConfigureTagzApp configureTagzApp, ConnectionSettings connectionSettings)
 	{
 
-		services.AddDbContext<TagzAppContext>(options =>
-				{
-					options.UseNpgsql(configuration.GetConnectionString("TagzApp"));
-				});
+		builder.AddNpgsqlDbContext<TagzAppContext>("tagzappdb");
+
 
 		//services.AddScoped<IProviderConfigurationRepository, PostgresProviderConfigurationRepository>();
-		services.AddSingleton<IMessagingService>(sp =>
+		builder.Services.AddSingleton<IMessagingService>(sp =>
 		{
 			var scope = sp.CreateScope();
-			var repo = scope.ServiceProvider.GetRequiredService<IProviderConfigurationRepository>();
 			var notify = scope.ServiceProvider.GetRequiredService<INotifyNewMessages>();
 			var logger = scope.ServiceProvider.GetRequiredService<ILogger<BaseProviderManager>>();
 			var safetyLogger = scope.ServiceProvider.GetRequiredService<ILogger<AzureSafetyModeration>>();
 			var socialMediaProviders = scope.ServiceProvider.GetRequiredService<IEnumerable<ISocialMediaProvider>>();
-			var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
 			var cache = scope.ServiceProvider.GetRequiredService<IMemoryCache>();
-			return new PostgresMessagingService(sp, notify, cache, config, logger, safetyLogger, socialMediaProviders, repo);
+			return new PostgresMessagingService(sp, notify, cache, logger, safetyLogger, socialMediaProviders);
 		});
-		services.AddHostedService(s => s.GetRequiredService<IMessagingService>());
+		builder.Services.AddHostedService(s => s.GetRequiredService<IMessagingService>());
 
-		services.AddScoped<IModerationRepository, PostgresModerationRepository>();
-		using var builtServices = services.BuildServiceProvider();
+		builder.Services.AddScoped<IModerationRepository, PostgresModerationRepository>();
+		using var builtServices = builder.Services.BuildServiceProvider();
 		var ctx = builtServices.GetRequiredService<TagzAppContext>();
-		_MigrateTask = ctx.Database.MigrateAsync();
+		ctx.Database.Migrate();
 
-		services.AddTransient<IApplicationConfigurationRepository, AppConfig.Repository>();
-
-		return services;
+		return builder.Services;
 
 	}
 
-	public static IConfigurationBuilder AddApplicationConfiguration(
-			this IConfigurationBuilder builder)
+	public static IServiceCollection AddPostgresSecurityServices(this IHostApplicationBuilder builder, ConnectionSettings connectionSettings)
 	{
-		var tempConfig = builder.Build();
 
-		return builder.Add(new AppConfig.ConfigurationSource(tempConfig));
+		//builder.AddNpgsqlDbContext<TagzApp.Security.SecurityContext>("securitydb");
+		builder.Services.AddNpgsql<SecurityContext>(
+			builder.Configuration.GetConnectionString("securitydb"),
+			options =>
+			{
+				options.MigrationsAssembly(typeof(SecurityContextModelSnapshot).Assembly.FullName);
+			});
+		builder.EnrichNpgsqlDbContext<SecurityContext>();
+
+		var serviceLocator = builder.Services.BuildServiceProvider();
+		var securityContext = serviceLocator.GetRequiredService<TagzApp.Security.SecurityContext>();
+
+		try
+		{
+			securityContext.Database.Migrate();
+		}
+		catch (PostgresException ex)
+		{
+			Console.WriteLine($"Error while migrating security context to Postgres: {ex}");
+		}
+
+		return builder.Services;
 
 	}
-
-
-
 
 }

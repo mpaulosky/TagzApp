@@ -1,6 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using TagzApp.Web.Services;
 
 namespace TagzApp.Storage.Postgres;
 
@@ -161,7 +160,7 @@ internal class PostgresModerationRepository : IModerationRepository
 	}
 
 
-	public async Task BlockUser(string userId, string provider, string userName, DateTimeOffset expirationDate)
+	public async Task BlockUser(string userId, string provider, string userName, DateTimeOffset expirationDate, BlockedUserCapabilities capabilities)
 	{
 
 		// add a new blocked user to the context
@@ -170,7 +169,8 @@ internal class PostgresModerationRepository : IModerationRepository
 			BlockingUser = userName,
 			Provider = provider,
 			UserName = userId,
-			ExpirationDateTime = expirationDate
+			ExpirationDateTime = expirationDate,
+			Capabilities = capabilities
 		};
 		_Context.BlockedUsers.Add(blockedUser);
 
@@ -180,7 +180,7 @@ internal class PostgresModerationRepository : IModerationRepository
 		await _Context.SaveChangesAsync();
 
 		var blockedUsers = await GetBlockedUsers();
-		_Cache.Set(KEY_BLOCKEDUSERS_CACHE, blockedUsers.Select(u => (u.Provider, u.UserName)).ToList());
+		UpdateBlockedUsersCache(blockedUsers);
 
 	}
 
@@ -203,8 +203,13 @@ internal class PostgresModerationRepository : IModerationRepository
 		await _Context.SaveChangesAsync();
 
 		var blockedUsers = await GetBlockedUsers();
-		_Cache.Set(KEY_BLOCKEDUSERS_CACHE, blockedUsers.Select(u => (u.Provider, u.UserName)).ToList());
+		UpdateBlockedUsersCache(blockedUsers);
 
+	}
+
+	internal void UpdateBlockedUsersCache(IEnumerable<BlockedUser> blockedUsers)
+	{
+		_Cache.Set(KEY_BLOCKEDUSERS_CACHE, blockedUsers.Select(u => (u.Provider, u.UserName, u.Capabilities)).ToList());
 	}
 
 	public async Task<(Content Content, ModerationAction Action)> GetContentWithModeration(string provider, string providerId)

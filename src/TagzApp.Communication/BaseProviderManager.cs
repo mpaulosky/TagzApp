@@ -1,7 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using System.Reflection;
 using TagzApp.Communication.Extensions;
 
 namespace TagzApp.Communication;
@@ -9,20 +7,15 @@ namespace TagzApp.Communication;
 public class BaseProviderManager
 {
 	private readonly IServiceCollection _Services;
-	private readonly IConfiguration _Configuration;
 	private readonly ILogger<BaseProviderManager> _Logger;
-	protected readonly IProviderConfigurationRepository? _ProviderConfigurationRepository;
 
 	public IEnumerable<ISocialMediaProvider> Providers { get; private set; }
 
-	public BaseProviderManager(IConfiguration configuration, ILogger<BaseProviderManager> logger,
-		IEnumerable<ISocialMediaProvider>? socialMediaProviders,
-		IProviderConfigurationRepository? providerConfigurationRepository)
+	public BaseProviderManager(ILogger<BaseProviderManager> logger,
+		IEnumerable<ISocialMediaProvider>? socialMediaProviders)
 	{
 		_Services = new ServiceCollection();
-		_Configuration = configuration;
 		_Logger = logger;
-		_ProviderConfigurationRepository = providerConfigurationRepository;
 		Providers = socialMediaProviders != null && socialMediaProviders.Count() > 0
 			? socialMediaProviders : new List<ISocialMediaProvider>();
 	}
@@ -31,10 +24,11 @@ public class BaseProviderManager
 	{
 		if (!Providers.Any())
 		{
-			await LoadConfigurationProviders();
+			/// await LoadConfigurationProviders();
 		}
 	}
 
+	/*
 	private async Task LoadConfigurationProviders()
 	{
 		List<IConfigureProvider> configProviders = new();
@@ -57,7 +51,7 @@ public class BaseProviderManager
 					{
 						foreach (var provider in providerAssemblies)
 						{
-							var providerInstance = Activator.CreateInstance(provider, _ProviderConfigurationRepository) as IConfigureProvider;
+							var providerInstance = Activator.CreateInstance(provider) as IConfigureProvider;
 
 							if (providerInstance != null)
 							{
@@ -79,22 +73,21 @@ public class BaseProviderManager
 			await ConfigureProviders(configProviders);
 		}
 	}
+	*/
 
+	// TODO: Remove?
 	private async Task ConfigureProviders(IEnumerable<IConfigureProvider> configurationProviders)
 	{
+
 		var socialMediaProviders = new List<ISocialMediaProvider>();
 
 		foreach (var provider in configurationProviders)
 		{
-			if (provider is INeedConfiguration)
-			{
-				((INeedConfiguration)provider).SetConfiguration(_Configuration);
-			}
 			await provider.RegisterServices(_Services);
 		}
 
-		_Services.AddPolicies(_Configuration);
-		_Services.AddSingleton<IConfiguration>(_Configuration);
+		// TEMP: Commented out to get working
+		_Services.AddHttpClientPolicies();
 		var sp = _Services.BuildServiceProvider();
 		socialMediaProviders.AddRange(sp.GetServices<ISocialMediaProvider>());
 		Providers = socialMediaProviders;

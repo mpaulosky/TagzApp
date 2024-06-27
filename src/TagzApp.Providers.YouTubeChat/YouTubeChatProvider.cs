@@ -24,6 +24,7 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 	public string LiveChatId { get; set; }
 	public string RefreshToken { get; set; }
 	public string YouTubeEmailId { get; set; }
+	public bool Enabled { get; }
 
 	private string _GoogleException = string.Empty;
 
@@ -38,6 +39,8 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 	public YouTubeChatProvider(YouTubeChatConfiguration config, IConfiguration configuration)
 	{
 		_ChatConfig = config;
+		Enabled = config.Enabled;
+
 		var rawConfig = configuration["ApplicationConfiguration:YouTubeChatConfiguration"];
 
 		if (rawConfig == null || rawConfig == "{}") return;
@@ -258,6 +261,21 @@ public class YouTubeChatProvider : ISocialMediaProvider, IDisposable
 	}
 
 	public Task<(SocialMediaStatus Status, string Message)> GetHealth() => Task.FromResult((_Status, _StatusMessage));
+
+	public Task StopAsync()
+	{
+		return Task.CompletedTask;
+	}
+
+	public async Task<IProviderConfiguration> GetConfiguration(IConfigureTagzApp configure)
+	{
+		return await configure.GetConfigurationById<YouTubeChatConfiguration>(Id);
+	}
+
+	public async Task SaveConfiguration(IConfigureTagzApp configure, IProviderConfiguration providerConfiguration)
+	{
+		await configure.SetConfigurationById(Id, (YouTubeChatConfiguration)providerConfiguration);
+	}
 
 	#endregion
 

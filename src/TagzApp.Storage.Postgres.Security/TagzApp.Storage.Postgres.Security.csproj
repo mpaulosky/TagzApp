@@ -7,8 +7,19 @@
 		<BaseOutputPath>..\TagzApp.Web\bin\</BaseOutputPath>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\TagzApp.Web\TagzApp.Web.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.6" />
+		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.4" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Using Include="TagzApp.Common" />
+		<Using Include="TagzApp.Common.Models" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\TagzApp.Common\TagzApp.Common.csproj" />
+	  <ProjectReference Include="..\TagzApp.Security\TagzApp.Security.csproj" />
+	</ItemGroup>
 
 </Project>

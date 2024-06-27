@@ -6,13 +6,33 @@ namespace TagzApp.Common.Models;
 
 public class ApplicationConfiguration
 {
-
-	public List<Settings> ChangedSettings = new();
+	private const string CONFIG_KEY = "ApplicationConfiguration";
 	private string _SiteName = "TagzApp";
 	private string _WaterfallHeaderMarkdown = "# Welcome to TagzApp";
 	private string _WaterfallHeaderCss = string.Empty;
+	private bool _ModerationEnabled = false;
+	private bool _SingleUserMode = true;
 
 	private string _YouTubeChatConfig = "{}";
+
+	public bool ModerationEnabled
+	{
+		get => _ModerationEnabled;
+		set
+		{
+			if (_ModerationEnabled == value) return;
+			_ModerationEnabled = value;
+		}
+	}
+
+	public bool SingleUserMode
+	{
+		get => _SingleUserMode;
+		set
+		{
+			if (_SingleUserMode) _SingleUserMode = value;
+		}
+	}
 
 	[Required, MaxLength(30)]
 	public string SiteName
@@ -22,10 +42,10 @@ public class ApplicationConfiguration
 		{
 			if (_SiteName == value) return;
 			_SiteName = value;
-			ChangedSettings.RemoveAll(s => s.Id == SettingsKeys.SiteName);
-			ChangedSettings.Add(new Settings(SettingsKeys.SiteName, value));
 		}
 	}
+
+	public DateTimeOffset StreamStart { get; set; } = DateTimeOffset.MinValue;
 
 	[Required]
 	public string WaterfallHeaderMarkdown
@@ -35,8 +55,6 @@ public class ApplicationConfiguration
 		{
 			if (_WaterfallHeaderMarkdown == value) return;
 			_WaterfallHeaderMarkdown = value;
-			ChangedSettings.RemoveAll(s => s.Id == SettingsKeys.WaterfallHeaderMarkdown);
-			ChangedSettings.Add(new Settings(SettingsKeys.WaterfallHeaderMarkdown, value));
 		}
 	}
 
@@ -48,8 +66,6 @@ public class ApplicationConfiguration
 		{
 			if (_WaterfallHeaderCss == value) return;
 			_WaterfallHeaderCss = value;
-			ChangedSettings.RemoveAll(s => s.Id == SettingsKeys.WaterfallHeaderCss);
-			ChangedSettings.Add(new Settings(SettingsKeys.WaterfallHeaderCss, value));
 		}
 	}
 
@@ -60,39 +76,21 @@ public class ApplicationConfiguration
 		{
 			if (_YouTubeChatConfig == value) return;
 			_YouTubeChatConfig = value;
-			ChangedSettings.RemoveAll(s => s.Id == SettingsKeys.YouTubeChatConfiguration);
-			ChangedSettings.Add(new Settings(SettingsKeys.YouTubeChatConfiguration, value));
 		}
 	}
 
-	public static implicit operator Dictionary<string, string?>(ApplicationConfiguration config)
+	public static async Task<ApplicationConfiguration> LoadFromConfiguration(IConfigureTagzApp config)
 	{
 
-		return new Dictionary<string, string?>
-		{
-			{ SettingsKeys.SiteName, config.SiteName },
-			{ SettingsKeys.WaterfallHeaderMarkdown, config.WaterfallHeaderMarkdown },
-			{ SettingsKeys.WaterfallHeaderCss, config.WaterfallHeaderCss },
-			{ SettingsKeys.YouTubeChatConfiguration, config.YouTubeChatConfiguration }
-		};
+		return await config.GetConfigurationById<ApplicationConfiguration>(CONFIG_KEY);
 
 	}
 
-	public void ForgetChanges()
-	{
-		ChangedSettings.Clear();
-	}
-
-	private class SettingsKeys
+	public async Task SaveConfiguration(IConfigureTagzApp configure)
 	{
 
-		public const string SiteName = "ApplicationConfiguration:SiteName";
-		public const string WaterfallHeaderMarkdown = "ApplicationConfiguration:WaterfallHeaderMarkdown";
-		public const string WaterfallHeaderCss = "ApplicationConfiguration:WaterfallHeaderCss";
-		public const string YouTubeChatConfiguration = "ApplicationConfiguration:YouTubeChatConfiguration";
+		await configure.SetConfigurationById(CONFIG_KEY, this);
 
 	}
 
 }
-
-

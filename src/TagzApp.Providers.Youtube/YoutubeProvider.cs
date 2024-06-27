@@ -17,9 +17,12 @@ internal class YoutubeProvider : ISocialMediaProvider
 
 	public TimeSpan NewContentRetrievalFrequency => TimeSpan.FromSeconds(30);
 
+	public bool Enabled { get; }
+
 	public YoutubeProvider(YoutubeConfiguration options)
 	{
 		_Configuration = options;
+		Enabled = options.Enabled;
 	}
 
 	public async Task<IEnumerable<Content>> GetContentForHashtag(Hashtag tag, DateTimeOffset since)
@@ -72,4 +75,23 @@ internal class YoutubeProvider : ISocialMediaProvider
 
 	public Task<(SocialMediaStatus Status, string Message)> GetHealth() => Task.FromResult((_Status, _StatusMessage));
 
+	public Task StopAsync()
+	{
+		return Task.CompletedTask;
+	}
+
+	public void Dispose()
+	{
+		// do nothing
+	}
+
+	public async Task<IProviderConfiguration> GetConfiguration(IConfigureTagzApp configure)
+	{
+		return await configure.GetConfigurationById<YoutubeConfiguration>(Id);
+	}
+
+	public async Task SaveConfiguration(IConfigureTagzApp configure, IProviderConfiguration providerConfiguration)
+	{
+		await configure.SetConfigurationById(Id, (YoutubeConfiguration)providerConfiguration);
+	}
 }

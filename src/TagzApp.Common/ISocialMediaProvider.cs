@@ -3,7 +3,7 @@
 /// <summary>
 /// Defines the interface for a Social Media Provider that delivers content to TagzApp
 /// </summary>
-public interface ISocialMediaProvider
+public interface ISocialMediaProvider : IDisposable
 {
 
 	/// <summary>
@@ -24,9 +24,18 @@ public interface ISocialMediaProvider
 	string Description { get; }
 
 	/// <summary>
+	/// Whether the provider is enabled
+	/// </summary>
+	bool Enabled { get; }
+
+	/// <summary>
 	/// How frequently new content should be retrieved from the provider
 	/// </summary>
 	TimeSpan NewContentRetrievalFrequency { get; }
+
+	Task<IProviderConfiguration> GetConfiguration(IConfigureTagzApp configure);
+
+	Task SaveConfiguration(IConfigureTagzApp configure, IProviderConfiguration providerConfiguration);
 
 	/// <summary>
 	/// Get a collection of content for a given hashtag
@@ -47,5 +56,7 @@ public interface ISocialMediaProvider
 	/// </summary>
 	/// <returns></returns>
 	Task StartAsync();
+
+	Task StopAsync();
 
 }
